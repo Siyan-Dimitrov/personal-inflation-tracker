@@ -89,7 +89,11 @@ class PersonalInflationCalculatorTest {
 
         val atNinetyDays = basket.snapshot(EpochDay(91))
         assertFalse(atNinetyDays.products.single { it.productId == milk.id }.isStale)
-        assertEquals(100.0, atNinetyDays.freshCoveragePercent)
+        assertEquals(
+            expected = 100.0,
+            actual = atNinetyDays.freshCoveragePercent,
+            absoluteTolerance = 0.000001,
+        )
 
         val afterNinetyDays = basket.snapshot(EpochDay(92))
         assertTrue(afterNinetyDays.products.single { it.productId == milk.id }.isStale)

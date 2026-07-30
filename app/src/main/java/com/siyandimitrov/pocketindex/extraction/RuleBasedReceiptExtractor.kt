@@ -317,7 +317,7 @@ class RuleBasedReceiptExtractor(
          * money.
          */
         private val moneyRegex =
-            Regex("""(?<![\d.])((?:£\s*)?-?\d{1,5}[.,]\d{2}|\d{1,5}\s*[pP])(-)?(?!\d)""")
+            Regex("""(?<![\d.])((?:£\s*)?-?\d{1,5}[.,]\d{2}|\d{1,5}\s*[pP]\b)(-)?(?!\d)""")
         private val subtotalLabel =
             Regex("""\b(?:SUB\s*TOTAL|SUBTOTAL|NET\s*TOTAL)\b""", RegexOption.IGNORE_CASE)
         private val taxLabel =
