@@ -5,6 +5,7 @@ local.properties
 
 # Gradle
 .gradle/
+.gradle-tmp/
 build/
 **/build/
 
@@ -27,4 +28,3 @@ Thumbs.db
 
 # Generated test artifacts
 test-results/
-
