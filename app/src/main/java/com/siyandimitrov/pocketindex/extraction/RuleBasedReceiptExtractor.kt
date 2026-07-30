@@ -361,3 +361,17 @@ class RuleBasedReceiptExtractor(
         private val repeatedWhitespaceRegex = Regex("""\s+""")
     }
 }
+
+/**
+ * Re-runs only the deterministic pack-size rule against preserved receipt text.
+ *
+ * The current persistence schema stores raw evidence and the confirmed pack size in observations,
+ * but not the parser's draft pack size on a line item. The review layer uses this pure helper to
+ * reconstruct that draft without repeating OCR or mutating the evidence.
+ */
+fun parseReceiptPackSize(text: String): ParsedPackSize? =
+    PackSizeParserHolder.parser.parsePackSize(text)
+
+private object PackSizeParserHolder {
+    val parser = RuleBasedReceiptExtractor()
+}

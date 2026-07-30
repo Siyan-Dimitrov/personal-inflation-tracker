@@ -19,13 +19,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -34,6 +34,18 @@ import androidx.compose.ui.unit.dp
 import com.siyandimitrov.pocketindex.ui.theme.Aubergine
 import com.siyandimitrov.pocketindex.ui.theme.Coral
 import com.siyandimitrov.pocketindex.ui.theme.Sage
+import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.layer.continuous
+import com.patrykandpatrick.vico.compose.cartesian.layer.point
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLine
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
+import com.patrykandpatrick.vico.compose.common.component.rememberShapeComponent
+import com.patrykandpatrick.vico.compose.common.fill
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
+import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
+import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
+import com.patrykandpatrick.vico.core.common.shape.CorneredShape
 
 @Composable
 fun PrivacyChip(modifier: Modifier = Modifier) {
@@ -144,68 +156,40 @@ fun MiniLineChart(
     labels: List<String>,
     modifier: Modifier = Modifier,
     lineColor: Color = Aubergine,
-    highlightLastPoint: Boolean = true,
 ) {
     require(values.size >= 2)
-    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
-    val surfaceColor = MaterialTheme.colorScheme.background
+    val modelProducer = remember { CartesianChartModelProducer() }
+    val pointComponent = rememberShapeComponent(
+        fill = fill(lineColor),
+        shape = CorneredShape.Pill,
+    )
+    val line = LineCartesianLayer.rememberLine(
+        fill = LineCartesianLayer.LineFill.single(fill(lineColor)),
+        stroke = LineCartesianLayer.LineStroke.continuous(thickness = 2.5.dp),
+        pointProvider = LineCartesianLayer.PointProvider.single(
+            LineCartesianLayer.point(
+                component = pointComponent,
+                size = 7.dp,
+            ),
+        ),
+    )
+    LaunchedEffect(values) {
+        modelProducer.runTransaction {
+            lineSeries { series(values) }
+        }
+    }
     Column(modifier = modifier) {
-        Canvas(
+        CartesianChartHost(
+            chart = rememberCartesianChart(
+                rememberLineCartesianLayer(
+                    lineProvider = LineCartesianLayer.LineProvider.series(line),
+                ),
+            ),
+            modelProducer = modelProducer,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(158.dp),
-        ) {
-            val top = 10.dp.toPx()
-            val bottom = size.height - 10.dp.toPx()
-            val chartHeight = bottom - top
-            repeat(4) { index ->
-                val y = top + (chartHeight * index / 3f)
-                drawLine(
-                    color = gridColor,
-                    start = Offset(0f, y),
-                    end = Offset(size.width, y),
-                    strokeWidth = 1.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
-                )
-            }
-
-            val min = values.min()
-            val max = values.max()
-            val range = (max - min).takeIf { it > 0f } ?: 1f
-            val points = values.mapIndexed { index, value ->
-                val x = size.width * index / (values.lastIndex.toFloat())
-                val normalised = (value - min) / range
-                Offset(x, bottom - normalised * chartHeight)
-            }
-            val path = Path().apply {
-                moveTo(points.first().x, points.first().y)
-                points.drop(1).forEach { lineTo(it.x, it.y) }
-            }
-            drawPath(
-                path = path,
-                color = lineColor,
-                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
-            )
-            points.forEachIndexed { index, point ->
-                drawCircle(
-                    color = if (highlightLastPoint && index == points.lastIndex) {
-                        surfaceColor
-                    } else {
-                        lineColor
-                    },
-                    radius = if (index == points.lastIndex) 5.dp.toPx() else 4.dp.toPx(),
-                    center = point,
-                )
-                if (highlightLastPoint && index == points.lastIndex) {
-                    drawCircle(
-                        color = lineColor,
-                        radius = 5.dp.toPx(),
-                        center = point,
-                        style = Stroke(width = 2.dp.toPx()),
-                    )
-                }
-            }
-        }
+        )
         Spacer(Modifier.height(4.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),

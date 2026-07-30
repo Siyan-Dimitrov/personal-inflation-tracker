@@ -22,18 +22,27 @@ import androidx.compose.material.icons.rounded.ElectricBolt
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.siyandimitrov.pocketindex.data.local.RecurringCadence
 
 private data class RecurringBill(
     val name: String,
@@ -43,14 +52,32 @@ private data class RecurringBill(
     val icon: ImageVector,
 )
 
-private val bills = listOf(
-    RecurringBill("Electricity", "British Gas", "£92", "Due in 5 days", Icons.Rounded.ElectricBolt),
-    RecurringBill("Broadband", "BT", "£32", "Due in 12 days", Icons.Rounded.Wifi),
-    RecurringBill("Council tax", "Manchester City Council", "£162", "Due in 3 weeks", Icons.Rounded.AccountBalance),
-)
-
 @Composable
 fun SettingsScreen(modifier: Modifier = Modifier) {
+    val viewModel: RecurringBillsViewModel = hiltViewModel()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showAddBillDialog by remember { mutableStateOf(false) }
+    val displayBills = state.bills.map { bill ->
+        RecurringBill(
+            name = bill.name,
+            provider = bill.providerLabel(),
+            price = bill.priceMinor.asPounds(wholePounds = true),
+            due = "Updated ${bill.lastUpdated}",
+            icon = bill.icon(),
+        )
+    }
+    val monthlyTotal = state.monthlyTotalMinor.asPounds(wholePounds = true)
+
+    if (showAddBillDialog) {
+        AddBillDialog(
+            onDismiss = { showAddBillDialog = false },
+            onAdd = { name, price ->
+                viewModel.addMonthlyBill(name, price)
+                showAddBillDialog = false
+            },
+        )
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -69,7 +96,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                Text("£286", style = MaterialTheme.typography.headlineLarge)
+                Text(monthlyTotal, style = MaterialTheme.typography.headlineLarge)
                 Text(
                     text = " / month",
                     modifier = Modifier.padding(bottom = 4.dp),
@@ -85,11 +112,20 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                Column {
-                    bills.forEachIndexed { index, bill ->
-                        BillRow(bill)
-                        if (index < bills.lastIndex) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                if (displayBills.isEmpty()) {
+                    Text(
+                        text = "No recurring bills yet",
+                        modifier = Modifier.padding(20.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Column {
+                        displayBills.forEachIndexed { index, bill ->
+                            BillRow(bill)
+                            if (index < displayBills.lastIndex) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                            }
                         }
                     }
                 }
@@ -98,7 +134,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         item {
             OutlinedButton(
-                onClick = {},
+                onClick = { showAddBillDialog = true },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
@@ -182,6 +218,72 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun AddBillDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add monthly bill") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Bill name") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { price = it },
+                    label = { Text("Monthly price (£)") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { onAdd(name, price) },
+                enabled = name.isNotBlank() && price.toMinorUnitsOrNull() != null,
+            ) {
+                Text("Add bill")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+private fun RecurringBillUi.providerLabel(): String = when (name.lowercase()) {
+    "electricity" -> "British Gas"
+    "broadband", "home broadband" -> "BT"
+    "council tax" -> "Manchester City Council"
+    else -> cadence.displayName()
+}
+
+private fun RecurringBillUi.icon(): ImageVector = when {
+    name.contains("electric", ignoreCase = true) -> Icons.Rounded.ElectricBolt
+    name.contains("broadband", ignoreCase = true) ||
+        name.contains("internet", ignoreCase = true) -> Icons.Rounded.Wifi
+    else -> Icons.Rounded.AccountBalance
+}
+
+private fun RecurringCadence.displayName(): String =
+    name.lowercase().replaceFirstChar(Char::titlecase)
+
+private fun Long.asPounds(wholePounds: Boolean): String =
+    if (wholePounds && this % 100L == 0L) {
+        "£${this / 100L}"
+    } else {
+        "£%.2f".format(java.util.Locale.UK, this / 100.0)
+    }
+
+@Composable
 private fun BillRow(bill: RecurringBill) {
     Row(
         modifier = Modifier
@@ -238,4 +340,3 @@ private fun BillRow(bill: RecurringBill) {
         }
     }
 }
-

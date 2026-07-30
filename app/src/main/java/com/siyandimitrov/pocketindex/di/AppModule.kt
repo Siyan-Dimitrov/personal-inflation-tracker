@@ -9,6 +9,10 @@ import com.siyandimitrov.pocketindex.data.local.PriceObservationDao
 import com.siyandimitrov.pocketindex.data.local.ProductDao
 import com.siyandimitrov.pocketindex.data.local.ReceiptDao
 import com.siyandimitrov.pocketindex.data.local.RecurringItemDao
+import com.siyandimitrov.pocketindex.extraction.MlKitReceiptOcrService
+import com.siyandimitrov.pocketindex.extraction.ReceiptExtractor
+import com.siyandimitrov.pocketindex.extraction.ReceiptOcrService
+import com.siyandimitrov.pocketindex.extraction.RuleBasedReceiptExtractor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -51,4 +55,14 @@ object AppModule {
     fun provideRecurringItemDao(
         database: PocketIndexDatabase,
     ): RecurringItemDao = database.recurringItemDao()
+
+    @Provides
+    @Singleton
+    fun provideReceiptOcrService(
+        @ApplicationContext context: Context,
+    ): ReceiptOcrService = MlKitReceiptOcrService(context)
+
+    @Provides
+    @Singleton
+    fun provideReceiptExtractor(): ReceiptExtractor = RuleBasedReceiptExtractor()
 }

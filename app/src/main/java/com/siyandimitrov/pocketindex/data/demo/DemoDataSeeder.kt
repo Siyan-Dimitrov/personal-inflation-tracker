@@ -63,13 +63,35 @@ class DemoDataSeeder @Inject constructor(
         )
         val broadbandId = productDao.insert(
             ProductEntity(
-                canonicalName = "Home broadband",
+                canonicalName = "Broadband",
                 categoryId = householdId,
                 unitType = UnitType.SERVICE,
                 packSize = 1.0,
             ),
         )
-        check(milkId > 0 && breadId > 0 && broadbandId > 0)
+        val electricityId = productDao.insert(
+            ProductEntity(
+                canonicalName = "Electricity",
+                categoryId = householdId,
+                unitType = UnitType.SERVICE,
+                packSize = 1.0,
+            ),
+        )
+        val councilTaxId = productDao.insert(
+            ProductEntity(
+                canonicalName = "Council tax",
+                categoryId = householdId,
+                unitType = UnitType.SERVICE,
+                packSize = 1.0,
+            ),
+        )
+        check(
+            milkId > 0 &&
+                breadId > 0 &&
+                broadbandId > 0 &&
+                electricityId > 0 &&
+                councilTaxId > 0,
+        )
 
         val receiptId = receiptDao.insert(
             ReceiptEntity(
@@ -138,6 +160,22 @@ class DemoDataSeeder @Inject constructor(
                     packSize = 1.0,
                     source = ObservationSource.BILL,
                 ),
+                PriceObservationEntity(
+                    productId = electricityId,
+                    observedAt = "2026-07-01",
+                    unitPriceMicros = 9_200_000_000,
+                    shelfPriceMinor = 9_200,
+                    packSize = 1.0,
+                    source = ObservationSource.BILL,
+                ),
+                PriceObservationEntity(
+                    productId = councilTaxId,
+                    observedAt = "2026-07-01",
+                    unitPriceMicros = 16_200_000_000,
+                    shelfPriceMinor = 16_200,
+                    packSize = 1.0,
+                    source = ObservationSource.BILL,
+                ),
             ),
         )
         recurringDao.insert(
@@ -145,6 +183,22 @@ class DemoDataSeeder @Inject constructor(
                 productId = broadbandId,
                 cadence = RecurringCadence.MONTHLY,
                 currentPriceMinor = 3_200,
+                lastUpdated = "2026-07-01",
+            ),
+        )
+        recurringDao.insert(
+            RecurringItemEntity(
+                productId = electricityId,
+                cadence = RecurringCadence.MONTHLY,
+                currentPriceMinor = 9_200,
+                lastUpdated = "2026-07-01",
+            ),
+        )
+        recurringDao.insert(
+            RecurringItemEntity(
+                productId = councilTaxId,
+                cadence = RecurringCadence.MONTHLY,
+                currentPriceMinor = 16_200,
                 lastUpdated = "2026-07-01",
             ),
         )

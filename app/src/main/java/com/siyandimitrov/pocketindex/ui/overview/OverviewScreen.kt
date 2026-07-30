@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -20,6 +21,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +39,7 @@ import com.siyandimitrov.pocketindex.ui.components.StatusTone
 
 @Composable
 fun OverviewScreen(
+    isScanning: Boolean,
     onScanReceipt: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -165,6 +168,7 @@ fun OverviewScreen(
         item {
             Button(
                 onClick = onScanReceipt,
+                enabled = !isScanning,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -173,9 +177,20 @@ fun OverviewScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                 ),
             ) {
-                Icon(Icons.Rounded.CameraAlt, contentDescription = null)
+                if (isScanning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(Icons.Rounded.CameraAlt, contentDescription = null)
+                }
                 Spacer(Modifier.padding(horizontal = 5.dp))
-                Text("Scan receipt", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (isScanning) "Reading receipt…" else "Scan receipt",
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
         }
     }
@@ -217,4 +232,3 @@ private fun DriverRow(
         )
     }
 }
-
