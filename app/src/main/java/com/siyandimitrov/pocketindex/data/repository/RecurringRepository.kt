@@ -13,5 +13,18 @@ interface RecurringRepository {
         priceMinor: Long,
         observedAt: String,
     ): Long
+
+    suspend fun updateRecurringBill(
+        recurringItemId: Long,
+        name: String,
+        cadence: RecurringCadence,
+        priceMinor: Long,
+        observedAt: String,
+    )
+
+    /** Soft-removes the bill while retaining its product and complete observation history. */
+    suspend fun removeRecurringBill(recurringItemId: Long)
+
+    /** Supports restoring a previously removed bill without recreating its history. */
     suspend fun setActive(recurringItemId: Long, active: Boolean)
 }

@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class RecurringBillUi(
+    val recurringItemId: Long,
+    val productId: Long,
     val name: String,
     val priceMinor: Long,
     val cadence: RecurringCadence,
@@ -51,6 +53,8 @@ class RecurringBillsViewModel @Inject constructor(
             RecurringBillsUiState(
                 bills = recurringItems.map { item ->
                     RecurringBillUi(
+                        recurringItemId = item.recurringItem.id,
+                        productId = item.product.id,
                         name = item.product.canonicalName,
                         priceMinor = item.recurringItem.currentPriceMinor,
                         cadence = item.recurringItem.cadence,
@@ -65,12 +69,28 @@ class RecurringBillsViewModel @Inject constructor(
             initialValue = RecurringBillsUiState(),
         )
 
-    fun addMonthlyBill(name: String, poundsText: String) {
+    fun saveBill(
+        existingBill: RecurringBillUi?,
+        name: String,
+        poundsText: String,
+        cadence: RecurringCadence,
+    ) {
         val billName = name.trim()
         val priceMinor = poundsText.toMinorUnitsOrNull() ?: return
         if (billName.isBlank()) return
 
         viewModelScope.launch {
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.UK).format(Date())
+            if (existingBill != null) {
+                recurringRepository.updateRecurringBill(
+                    recurringItemId = existingBill.recurringItemId,
+                    name = billName,
+                    cadence = cadence,
+                    priceMinor = priceMinor,
+                    observedAt = today,
+                )
+                return@launch
+            }
             val categories = catalogRepository.observeCategories().first()
             val categoryId = categories
                 .firstOrNull { it.name.equals(HOUSEHOLD_CATEGORY, ignoreCase = true) }
@@ -92,13 +112,18 @@ class RecurringBillsViewModel @Inject constructor(
                         packSize = 1.0,
                     ),
                 )
-            val today = SimpleDateFormat("yyyy-MM-dd", Locale.UK).format(Date())
             recurringRepository.recordPrice(
                 productId = productId,
-                cadence = RecurringCadence.MONTHLY,
+                cadence = cadence,
                 priceMinor = priceMinor,
                 observedAt = today,
             )
+        }
+    }
+
+    fun removeBill(bill: RecurringBillUi) {
+        viewModelScope.launch {
+            recurringRepository.removeRecurringBill(bill.recurringItemId)
         }
     }
 

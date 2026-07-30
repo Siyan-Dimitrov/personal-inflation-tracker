@@ -28,8 +28,8 @@ interface RecurringItemDao {
     suspend fun insert(item: RecurringItemEntity): Long
 
     @Update
-    suspend fun update(item: RecurringItemEntity)
+    suspend fun update(item: RecurringItemEntity): Int
 
     @Query("UPDATE recurring_items SET active = :active WHERE id = :id")
-    suspend fun setActive(id: Long, active: Boolean)
+    suspend fun setActive(id: Long, active: Boolean): Int
 }

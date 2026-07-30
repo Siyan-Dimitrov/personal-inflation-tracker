@@ -2,6 +2,7 @@ package com.siyandimitrov.pocketindex.ui.settings
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,11 +19,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ElectricBolt
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siyandimitrov.pocketindex.data.local.RecurringCadence
 
 private data class RecurringBill(
+    val source: RecurringBillUi,
     val name: String,
     val provider: String,
     val price: String,
@@ -56,9 +62,12 @@ private data class RecurringBill(
 fun SettingsScreen(modifier: Modifier = Modifier) {
     val viewModel: RecurringBillsViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var showAddBillDialog by remember { mutableStateOf(false) }
+    var showBillEditor by remember { mutableStateOf(false) }
+    var editingBill by remember { mutableStateOf<RecurringBillUi?>(null) }
+    var pendingRemoval by remember { mutableStateOf<RecurringBillUi?>(null) }
     val displayBills = state.bills.map { bill ->
         RecurringBill(
+            source = bill,
             name = bill.name,
             provider = bill.providerLabel(),
             price = bill.priceMinor.asPounds(wholePounds = true),
@@ -68,12 +77,46 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
     val monthlyTotal = state.monthlyTotalMinor.asPounds(wholePounds = true)
 
-    if (showAddBillDialog) {
-        AddBillDialog(
-            onDismiss = { showAddBillDialog = false },
-            onAdd = { name, price ->
-                viewModel.addMonthlyBill(name, price)
-                showAddBillDialog = false
+    if (showBillEditor) {
+        BillEditorDialog(
+            bill = editingBill,
+            onDismiss = { showBillEditor = false },
+            onSave = { name, price, cadence ->
+                viewModel.saveBill(editingBill, name, price, cadence)
+                showBillEditor = false
+            },
+            onRemove = editingBill?.let { bill ->
+                {
+                    showBillEditor = false
+                    pendingRemoval = bill
+                }
+            },
+        )
+    }
+    pendingRemoval?.let { bill ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            title = { Text("Remove ${bill.name}?") },
+            text = {
+                Text(
+                    "This removes the bill from your active monthly total. " +
+                        "Existing price history is kept for your index.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.removeBill(bill)
+                        pendingRemoval = null
+                    },
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoval = null }) {
+                    Text("Cancel")
+                }
             },
         )
     }
@@ -122,7 +165,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 } else {
                     Column {
                         displayBills.forEachIndexed { index, bill ->
-                            BillRow(bill)
+                            BillRow(
+                                bill = bill,
+                                onClick = {
+                                    editingBill = bill.source
+                                    showBillEditor = true
+                                },
+                            )
                             if (index < displayBills.lastIndex) {
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                             }
@@ -134,7 +183,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         item {
             OutlinedButton(
-                onClick = { showAddBillDialog = true },
+                onClick = {
+                    editingBill = null
+                    showBillEditor = true
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
@@ -218,15 +270,25 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun AddBillDialog(
+private fun BillEditorDialog(
+    bill: RecurringBillUi?,
     onDismiss: () -> Unit,
-    onAdd: (String, String) -> Unit,
+    onSave: (String, String, RecurringCadence) -> Unit,
+    onRemove: (() -> Unit)?,
 ) {
-    var name by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
+    var name by remember(bill?.recurringItemId) {
+        mutableStateOf(bill?.name.orEmpty())
+    }
+    var price by remember(bill?.recurringItemId) {
+        mutableStateOf(bill?.priceMinor?.asEditorPounds().orEmpty())
+    }
+    var cadence by remember(bill?.recurringItemId) {
+        mutableStateOf(bill?.cadence ?: RecurringCadence.MONTHLY)
+    }
+    var cadenceMenuExpanded by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add monthly bill") },
+        title = { Text(if (bill == null) "Add recurring bill" else "Edit recurring bill") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -241,19 +303,65 @@ private fun AddBillDialog(
                     label = { Text("Monthly price (£)") },
                     singleLine = true,
                 )
+                Box {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { cadenceMenuExpanded = true },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        color = MaterialTheme.colorScheme.surface,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        ) {
+                            Text(
+                                text = "Cadence",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = cadence.displayName(),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = cadenceMenuExpanded,
+                        onDismissRequest = { cadenceMenuExpanded = false },
+                    ) {
+                        RecurringCadence.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.displayName()) },
+                                onClick = {
+                                    cadence = option
+                                    cadenceMenuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(
-                onClick = { onAdd(name, price) },
+            TextButton(
+                onClick = { onSave(name, price, cadence) },
                 enabled = name.isNotBlank() && price.toMinorUnitsOrNull() != null,
             ) {
-                Text("Add bill")
+                Text(if (bill == null) "Add bill" else "Save")
             }
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row {
+                if (onRemove != null) {
+                    TextButton(onClick = onRemove) {
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = null)
+                        Text(" Remove", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         },
     )
@@ -283,11 +391,22 @@ private fun Long.asPounds(wholePounds: Boolean): String =
         "£%.2f".format(java.util.Locale.UK, this / 100.0)
     }
 
+private fun Long.asEditorPounds(): String =
+    if (this % 100L == 0L) {
+        (this / 100L).toString()
+    } else {
+        "%.2f".format(java.util.Locale.UK, this / 100.0)
+    }
+
 @Composable
-private fun BillRow(bill: RecurringBill) {
+private fun BillRow(
+    bill: RecurringBill,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(13.dp),
@@ -327,7 +446,7 @@ private fun BillRow(bill: RecurringBill) {
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Monthly",
+                text = bill.source.cadence.displayName(),
                 modifier = Modifier
                     .background(
                         MaterialTheme.colorScheme.primaryContainer,

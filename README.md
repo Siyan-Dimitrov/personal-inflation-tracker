@@ -19,6 +19,7 @@ does not request network access, create accounts, or include analytics.
 
 - Material 3 Compose shell based on the first Pixel 7 Pro design direction
 - Overview, receipt review, product history, and recurring-bills screens
+- Add and edit recurring bills, including cadence; soft removal keeps price history
 - Google ML Kit document scanning and bundled on-device OCR
 - Deterministic UK receipt parsing, pack-size extraction, fuzzy matching, and
   receipt-total validation
