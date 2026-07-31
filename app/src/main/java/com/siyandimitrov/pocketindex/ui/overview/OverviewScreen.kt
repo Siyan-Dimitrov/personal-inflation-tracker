@@ -35,11 +35,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siyandimitrov.pocketindex.domain.EpochDay
 import com.siyandimitrov.pocketindex.domain.HeadlineRateKind
+import com.siyandimitrov.pocketindex.domain.IndexPoint
 import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculation
 import com.siyandimitrov.pocketindex.domain.ProductContribution
 import com.siyandimitrov.pocketindex.ui.components.CoverageRing
@@ -105,8 +107,24 @@ fun OverviewScreen(
             }
             is OverviewUiState.Ready -> {
                 val dashboard = currentState.dashboard
-                item { Headline(dashboard) }
-                item { IndexChart(dashboard) }
+                val visibleSeries = visibleSeriesForRange(
+                    dashboard.fixedSeries,
+                    currentState.chartRange,
+                )
+                item {
+                    Headline(
+                        dashboard = dashboard,
+                        range = currentState.chartRange,
+                        visibleSeries = visibleSeries,
+                    )
+                }
+                item {
+                    ChartRangeSelector(
+                        selected = currentState.chartRange,
+                        onSelected = viewModel::selectChartRange,
+                    )
+                }
+                item { IndexChart(visibleSeries) }
                 item { CoverageCard(dashboard) }
                 item { CategoryExplanation(dashboard) }
                 item { ProductExplanation(dashboard.productContributions) }
@@ -127,8 +145,18 @@ fun OverviewScreen(
 }
 
 @Composable
-private fun Headline(dashboard: InflationDashboardCalculation.Ready) {
+private fun Headline(
+    dashboard: InflationDashboardCalculation.Ready,
+    range: InflationChartRange,
+    visibleSeries: List<IndexPoint>,
+) {
     val rate = dashboard.headlineRate
+    val displayedPercent = if (range == InflationChartRange.ALL) {
+        rate?.percent
+    } else {
+        rangeChangePercent(visibleSeries)
+    }
+    val availableMonths = (visibleSeries.size - 1).coerceAtLeast(0)
     Column {
         Text(
             text = "Your inflation",
@@ -142,34 +170,44 @@ private fun Headline(dashboard: InflationDashboardCalculation.Ready) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = rate?.percent?.asSignedPercent() ?: "Not enough history",
-                style = if (rate == null) {
+                text = displayedPercent?.asSignedPercent() ?: "Not enough history",
+                style = if (displayedPercent == null) {
                     MaterialTheme.typography.headlineLarge
                 } else {
                     MaterialTheme.typography.displayLarge
                 },
-                color = rate?.percent?.changeColor() ?: MaterialTheme.colorScheme.onSurface,
+                color = displayedPercent?.changeColor() ?: MaterialTheme.colorScheme.onSurface,
             )
             StatusPill(
-                text = when (rate?.kind) {
-                    HeadlineRateKind.YEAR_ON_YEAR -> "Year on year"
-                    HeadlineRateKind.ANNUALISED_EARLY_ESTIMATE -> "Early estimate"
-                    null -> "Building history"
+                text = when {
+                    range != InflationChartRange.ALL && availableMonths > 0 -> {
+                        if (availableMonths < (range.months ?: availableMonths)) {
+                            "${availableMonths}M available"
+                        } else {
+                            range.periodLabel
+                        }
+                    }
+                    rate?.kind == HeadlineRateKind.YEAR_ON_YEAR -> "Year on year"
+                    rate?.kind == HeadlineRateKind.ANNUALISED_EARLY_ESTIMATE -> "Early estimate"
+                    else -> "Building history"
                 },
-                tone = if (rate?.kind == HeadlineRateKind.YEAR_ON_YEAR) {
-                    StatusTone.Success
-                } else {
-                    StatusTone.Attention
+                tone = when {
+                    range != InflationChartRange.ALL -> StatusTone.Neutral
+                    rate?.kind == HeadlineRateKind.YEAR_ON_YEAR -> StatusTone.Success
+                    else -> StatusTone.Attention
                 },
             )
         }
         Text(
-            text = when (rate?.kind) {
-                HeadlineRateKind.YEAR_ON_YEAR ->
+            text = when {
+                range != InflationChartRange.ALL && visibleSeries.size >= 2 ->
+                    "Change from ${visibleSeries.first().asOf.asMonthYear()} " +
+                        "to ${visibleSeries.last().asOf.asMonthYear()}."
+                rate?.kind == HeadlineRateKind.YEAR_ON_YEAR ->
                     "Change since ${rate.comparison.asOf.asMonthYear()}"
-                HeadlineRateKind.ANNUALISED_EARLY_ESTIMATE ->
+                rate?.kind == HeadlineRateKind.ANNUALISED_EARLY_ESTIMATE ->
                     "Annualised from ${rate.comparison.asOf.asMonthYear()}; this will settle as history grows."
-                null -> "A second monthly point is needed before a rate can be shown."
+                else -> "A second monthly point is needed before a rate can be shown."
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -178,15 +216,53 @@ private fun Headline(dashboard: InflationDashboardCalculation.Ready) {
 }
 
 @Composable
-private fun IndexChart(dashboard: InflationDashboardCalculation.Ready) {
-    if (dashboard.fixedSeries.size < 2) {
+private fun ChartRangeSelector(
+    selected: InflationChartRange,
+    onSelected: (InflationChartRange) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(13.dp))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        InflationChartRange.entries.forEach { range ->
+            Surface(
+                onClick = { onSelected(range) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(10.dp),
+                color = if (range == selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+            ) {
+                Text(
+                    text = range.shortLabel,
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = if (range == selected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IndexChart(visible: List<IndexPoint>) {
+    if (visible.size < 2) {
         MessageCard(
             title = "Monthly chart is building",
             explanation = "The first point is ready. Another point will appear as time and prices accumulate.",
         )
         return
     }
-    val visible = dashboard.fixedSeries.takeLast(6)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = "Fixed-basket index",
@@ -194,7 +270,7 @@ private fun IndexChart(dashboard: InflationDashboardCalculation.Ready) {
         )
         MiniLineChart(
             values = visible.map { it.index.toFloat() },
-            labels = visible.map { it.asOf.asMonthLabel() },
+            labels = visible.chartLabels(),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -547,6 +623,14 @@ private fun Double.asSignedPoints(): String =
     "%+.2f pp".format(Locale.UK, this)
 
 private fun EpochDay.asMonthLabel(): String = format("MMM")
+
+private fun List<IndexPoint>.chartLabels(): List<String> =
+    if (size <= 7) {
+        map { it.asOf.asMonthLabel() }
+    } else {
+        filterIndexed { index, _ -> index == 0 || index == lastIndex || index % 2 == 0 }
+            .map { it.asOf.asMonthLabel() }
+    }
 
 private fun EpochDay.asMonthYear(): String = format("MMM yyyy")
 

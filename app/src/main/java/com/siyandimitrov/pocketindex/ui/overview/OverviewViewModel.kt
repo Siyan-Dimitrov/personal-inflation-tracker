@@ -6,6 +6,7 @@ import com.siyandimitrov.pocketindex.data.inflation.InflationRepositoryAdapter
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
 import com.siyandimitrov.pocketindex.domain.EpochDay
 import com.siyandimitrov.pocketindex.domain.IndexConfiguration
+import com.siyandimitrov.pocketindex.domain.IndexPoint
 import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculation
 import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculator
 import com.siyandimitrov.pocketindex.domain.InflationDashboardInput
@@ -35,6 +36,7 @@ sealed interface OverviewUiState {
 
     data class Ready(
         val dashboard: InflationDashboardCalculation.Ready,
+        val chartRange: InflationChartRange,
     ) : OverviewUiState
 
     data class Error(
@@ -42,21 +44,44 @@ sealed interface OverviewUiState {
     ) : OverviewUiState
 }
 
+enum class InflationChartRange(
+    val months: Int?,
+    val shortLabel: String,
+    val periodLabel: String,
+) {
+    ONE_MONTH(1, "1M", "1 month"),
+    SIX_MONTHS(6, "6M", "6 months"),
+    ONE_YEAR(12, "1Y", "1 year"),
+    ALL(null, "All", "All history"),
+    ;
+
+    val preferenceValue: Int
+        get() = months ?: 0
+
+    companion object {
+        fun fromPreference(value: Int): InflationChartRange =
+            entries.firstOrNull { it.preferenceValue == value } ?: SIX_MONTHS
+    }
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class OverviewViewModel @Inject constructor(
     adapter: InflationRepositoryAdapter,
-    preferences: InflationPreferences,
+    private val preferences: InflationPreferences,
 ) : ViewModel() {
     val uiState = combine(
         adapter.observeDashboardInput(),
         preferences.baseWindowDays,
-        ::Pair,
-    ).mapLatest { (input, baseWindowDays) ->
+        preferences.chartRangeMonths,
+    ) { input, baseWindowDays, chartRangeMonths ->
+        Triple(input, baseWindowDays, chartRangeMonths)
+    }.mapLatest { (input, baseWindowDays, chartRangeMonths) ->
         calculateOverviewState(
             input = input,
             asOf = EpochDay(Math.floorDiv(Date().time, MILLIS_PER_DAY)),
             configuration = IndexConfiguration(baseWindowDays = baseWindowDays),
+            chartRange = InflationChartRange.fromPreference(chartRangeMonths),
         )
     }.catch { throwable ->
         emit(
@@ -71,6 +96,10 @@ class OverviewViewModel @Inject constructor(
         initialValue = OverviewUiState.Loading,
     )
 
+    fun selectChartRange(range: InflationChartRange) {
+        preferences.setChartRangeMonths(range.preferenceValue)
+    }
+
     private companion object {
         const val MILLIS_PER_DAY = 86_400_000L
     }
@@ -80,6 +109,7 @@ internal fun calculateOverviewState(
     input: InflationDashboardInput,
     asOf: EpochDay,
     configuration: IndexConfiguration,
+    chartRange: InflationChartRange = InflationChartRange.SIX_MONTHS,
 ): OverviewUiState {
     if (input.products.isEmpty()) {
         return OverviewUiState.Empty(
@@ -110,7 +140,7 @@ internal fun calculateOverviewState(
                 }
 
                 is InflationDashboardCalculation.Ready -> {
-                    OverviewUiState.Ready(calculation)
+                    OverviewUiState.Ready(calculation, chartRange)
                 }
             }
         },
@@ -121,4 +151,18 @@ internal fun calculateOverviewState(
             )
         },
     )
+}
+
+internal fun visibleSeriesForRange(
+    series: List<IndexPoint>,
+    range: InflationChartRange,
+): List<IndexPoint> = range.months
+    ?.let { months -> series.takeLast(months + 1) }
+    ?: series
+
+internal fun rangeChangePercent(series: List<IndexPoint>): Double? {
+    if (series.size < 2) return null
+    val first = series.first().index
+    if (first == 0.0) return null
+    return series.last().index / first * 100.0 - 100.0
 }

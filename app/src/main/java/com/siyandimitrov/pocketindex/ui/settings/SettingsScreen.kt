@@ -24,9 +24,11 @@ import androidx.compose.material.icons.rounded.ElectricBolt
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Functions
 import androidx.compose.material.icons.rounded.Percent
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.siyandimitrov.pocketindex.BuildConfig
 import com.siyandimitrov.pocketindex.data.local.RecurringCadence
 
 private data class RecurringBill(
@@ -66,11 +69,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val inflationViewModel: InflationSettingsViewModel = hiltViewModel()
     val inflationState by inflationViewModel.uiState.collectAsStateWithLifecycle()
+    val dataViewModel: DataSettingsViewModel = hiltViewModel()
+    val dataState by dataViewModel.uiState.collectAsStateWithLifecycle()
     var showBillEditor by remember { mutableStateOf(false) }
     var editingBill by remember { mutableStateOf<RecurringBillUi?>(null) }
     var pendingRemoval by remember { mutableStateOf<RecurringBillUi?>(null) }
     var editingCategoryWeight by remember { mutableStateOf<CategoryWeightUi?>(null) }
     var showMethodology by remember { mutableStateOf(false) }
+    var showResetConfirmation by remember { mutableStateOf(false) }
     val displayBills = state.bills.map { bill ->
         RecurringBill(
             source = bill,
@@ -138,6 +144,44 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
     if (showMethodology) {
         MethodologyDialog(onDismiss = { showMethodology = false })
+    }
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = {
+                Text(if (BuildConfig.DEBUG) "Restore demo data?" else "Reset all data?")
+            },
+            text = {
+                Text(
+                    if (BuildConfig.DEBUG) {
+                        "This deletes your receipts, price edits, bills, and settings, then " +
+                            "restores the original demo history. This cannot be undone."
+                    } else {
+                        "This permanently deletes every receipt, product, price observation, " +
+                            "bill, and setting stored on this device. This cannot be undone."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResetConfirmation = false
+                        dataViewModel.resetData()
+                    },
+                    enabled = !dataState.isResetting,
+                ) {
+                    Text(
+                        if (BuildConfig.DEBUG) "Restore" else "Reset",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     LazyColumn(
@@ -299,6 +343,50 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         )
                     }
                     Text("›", style = MaterialTheme.typography.titleLarge)
+                }
+            }
+        }
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { showResetConfirmation = true },
+                    enabled = !dataState.isResetting,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(15.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    if (dataState.isResetting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(Icons.Rounded.RestartAlt, contentDescription = null)
+                    }
+                    Text(
+                        text = if (BuildConfig.DEBUG) "  Restore demo data" else "  Reset all data",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                dataState.message?.let { message ->
+                    Text(
+                        text = message,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = dataViewModel::dismissMessage),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (dataState.isError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.secondary
+                        },
+                    )
                 }
             }
         }

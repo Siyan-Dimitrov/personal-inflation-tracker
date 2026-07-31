@@ -15,12 +15,11 @@ import com.siyandimitrov.pocketindex.data.local.RecurringItemEntity
 import com.siyandimitrov.pocketindex.data.local.UnitType
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToLong
 
 /**
- * Opt-in sample data for previews, screenshots, or manual QA.
- *
- * Nothing calls this automatically. A debug-only UI or instrumentation setup can inject it and
- * invoke [seedIfEmpty], without allowing BuildConfig concerns into the data layer.
+ * Sample data for previews, screenshots, and manual QA. Debug builds invoke [seedIfEmpty] at
+ * startup; release builds never call this seeder.
  */
 @Singleton
 class DemoDataSeeder @Inject constructor(
@@ -131,52 +130,90 @@ class DemoDataSeeder @Inject constructor(
             ),
         )
         observationDao.insertAll(
-            listOf(
-                PriceObservationEntity(
-                    productId = milkId,
-                    observedAt = "2026-07-26",
-                    unitPriceMicros = ((170.0 / 1_136.0) * 1_000_000).toLong(),
-                    shelfPriceMinor = 170,
-                    packSize = 1_136.0,
-                    merchantId = marketId,
-                    source = ObservationSource.RECEIPT,
-                    receiptLineItemId = lineIds[0],
-                ),
-                PriceObservationEntity(
-                    productId = breadId,
-                    observedAt = "2026-07-26",
-                    unitPriceMicros = 150_000_000,
-                    shelfPriceMinor = 150,
-                    packSize = 1.0,
-                    merchantId = marketId,
-                    source = ObservationSource.RECEIPT,
-                    receiptLineItemId = lineIds[1],
-                ),
-                PriceObservationEntity(
-                    productId = broadbandId,
-                    observedAt = "2026-07-01",
-                    unitPriceMicros = 3_200_000_000,
-                    shelfPriceMinor = 3_200,
-                    packSize = 1.0,
-                    source = ObservationSource.BILL,
-                ),
-                PriceObservationEntity(
-                    productId = electricityId,
-                    observedAt = "2026-07-01",
-                    unitPriceMicros = 9_200_000_000,
-                    shelfPriceMinor = 9_200,
-                    packSize = 1.0,
-                    source = ObservationSource.BILL,
-                ),
-                PriceObservationEntity(
-                    productId = councilTaxId,
-                    observedAt = "2026-07-01",
-                    unitPriceMicros = 16_200_000_000,
-                    shelfPriceMinor = 16_200,
-                    packSize = 1.0,
-                    source = ObservationSource.BILL,
-                ),
-            ),
+            buildList {
+                addAll(
+                    groceryHistory(
+                        productId = milkId,
+                        merchantId = marketId,
+                        packSize = 1_136.0,
+                        prices = MONTHLY_HISTORY.zip(MILK_PRICES_MINOR),
+                    ),
+                )
+                addAll(
+                    groceryHistory(
+                        productId = breadId,
+                        merchantId = marketId,
+                        packSize = 1.0,
+                        prices = MONTHLY_HISTORY.zip(BREAD_PRICES_MINOR),
+                    ),
+                )
+                addAll(
+                    billHistory(
+                        productId = broadbandId,
+                        prices = MONTHLY_HISTORY.zip(BROADBAND_PRICES_MINOR),
+                    ),
+                )
+                addAll(
+                    billHistory(
+                        productId = electricityId,
+                        prices = MONTHLY_HISTORY.zip(ELECTRICITY_PRICES_MINOR),
+                    ),
+                )
+                addAll(
+                    billHistory(
+                        productId = councilTaxId,
+                        prices = MONTHLY_HISTORY.zip(COUNCIL_TAX_PRICES_MINOR),
+                    ),
+                )
+                addAll(
+                    listOf(
+                        PriceObservationEntity(
+                            productId = milkId,
+                            observedAt = "2026-07-26",
+                            unitPriceMicros = unitPriceMicros(170L, 1_136.0),
+                            shelfPriceMinor = 170,
+                            packSize = 1_136.0,
+                            merchantId = marketId,
+                            source = ObservationSource.RECEIPT,
+                            receiptLineItemId = lineIds[0],
+                        ),
+                        PriceObservationEntity(
+                            productId = breadId,
+                            observedAt = "2026-07-26",
+                            unitPriceMicros = unitPriceMicros(150L, 1.0),
+                            shelfPriceMinor = 150,
+                            packSize = 1.0,
+                            merchantId = marketId,
+                            source = ObservationSource.RECEIPT,
+                            receiptLineItemId = lineIds[1],
+                        ),
+                        PriceObservationEntity(
+                            productId = broadbandId,
+                            observedAt = "2026-07-01",
+                            unitPriceMicros = unitPriceMicros(3_200L, 1.0),
+                            shelfPriceMinor = 3_200,
+                            packSize = 1.0,
+                            source = ObservationSource.BILL,
+                        ),
+                        PriceObservationEntity(
+                            productId = electricityId,
+                            observedAt = "2026-07-01",
+                            unitPriceMicros = unitPriceMicros(9_200L, 1.0),
+                            shelfPriceMinor = 9_200,
+                            packSize = 1.0,
+                            source = ObservationSource.BILL,
+                        ),
+                        PriceObservationEntity(
+                            productId = councilTaxId,
+                            observedAt = "2026-07-01",
+                            unitPriceMicros = unitPriceMicros(16_200L, 1.0),
+                            shelfPriceMinor = 16_200,
+                            packSize = 1.0,
+                            source = ObservationSource.BILL,
+                        ),
+                    ),
+                )
+            },
         )
         recurringDao.insert(
             RecurringItemEntity(
@@ -203,5 +240,60 @@ class DemoDataSeeder @Inject constructor(
             ),
         )
         true
+    }
+
+    private fun groceryHistory(
+        productId: Long,
+        merchantId: Long,
+        packSize: Double,
+        prices: List<Pair<String, Long>>,
+    ): List<PriceObservationEntity> = prices.map { (observedAt, shelfPriceMinor) ->
+        PriceObservationEntity(
+            productId = productId,
+            observedAt = observedAt,
+            unitPriceMicros = unitPriceMicros(shelfPriceMinor, packSize),
+            shelfPriceMinor = shelfPriceMinor,
+            packSize = packSize,
+            merchantId = merchantId,
+            source = ObservationSource.MANUAL,
+        )
+    }
+
+    private fun billHistory(
+        productId: Long,
+        prices: List<Pair<String, Long>>,
+    ): List<PriceObservationEntity> = prices.map { (observedAt, periodPriceMinor) ->
+        PriceObservationEntity(
+            productId = productId,
+            observedAt = observedAt,
+            unitPriceMicros = unitPriceMicros(periodPriceMinor, 1.0),
+            shelfPriceMinor = periodPriceMinor,
+            packSize = 1.0,
+            source = ObservationSource.BILL,
+        )
+    }
+
+    private fun unitPriceMicros(shelfPriceMinor: Long, packSize: Double): Long =
+        (shelfPriceMinor.toDouble() / packSize * 1_000_000.0).roundToLong()
+
+    private companion object {
+        val MONTHLY_HISTORY = listOf(
+            "2025-11-01",
+            "2025-12-01",
+            "2026-01-01",
+            "2026-02-01",
+            "2026-03-01",
+            "2026-04-01",
+            "2026-05-01",
+            "2026-06-01",
+        )
+        val MILK_PRICES_MINOR = listOf(150L, 152L, 154L, 157L, 160L, 162L, 165L, 168L)
+        val BREAD_PRICES_MINOR = listOf(135L, 136L, 138L, 140L, 142L, 145L, 147L, 149L)
+        val BROADBAND_PRICES_MINOR =
+            listOf(2_800L, 2_850L, 2_900L, 2_950L, 3_000L, 3_050L, 3_100L, 3_150L)
+        val ELECTRICITY_PRICES_MINOR =
+            listOf(7_600L, 7_800L, 8_000L, 8_200L, 8_500L, 8_700L, 9_000L, 9_100L)
+        val COUNCIL_TAX_PRICES_MINOR =
+            listOf(15_000L, 15_000L, 15_000L, 15_400L, 15_400L, 15_800L, 15_800L, 16_200L)
     }
 }

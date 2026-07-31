@@ -29,6 +29,18 @@ class InflationPreferences @Inject constructor(
         awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }.distinctUntilChanged()
 
+    val chartRangeMonths: Flow<Int> = callbackFlow {
+        fun emitValue() {
+            trySend(preferences.getInt(KEY_CHART_RANGE_MONTHS, DEFAULT_CHART_RANGE_MONTHS))
+        }
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_CHART_RANGE_MONTHS) emitValue()
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        emitValue()
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
     fun setBaseWindowDays(days: Long) {
         require(days in MIN_BASE_WINDOW_DAYS..MAX_BASE_WINDOW_DAYS) {
             "Base window must be between 2 and 26 weeks."
@@ -36,10 +48,22 @@ class InflationPreferences @Inject constructor(
         preferences.edit().putLong(KEY_BASE_WINDOW_DAYS, days).apply()
     }
 
+    fun setChartRangeMonths(months: Int) {
+        require(months in CHART_RANGE_OPTIONS) { "Unsupported chart range: $months months." }
+        preferences.edit().putInt(KEY_CHART_RANGE_MONTHS, months).apply()
+    }
+
+    fun resetToDefaults() {
+        preferences.edit().clear().apply()
+    }
+
     private companion object {
         const val FILE_NAME = "inflation_preferences"
         const val KEY_BASE_WINDOW_DAYS = "base_window_days"
+        const val KEY_CHART_RANGE_MONTHS = "chart_range_months"
+        const val DEFAULT_CHART_RANGE_MONTHS = 6
         const val MIN_BASE_WINDOW_DAYS = 14L
         const val MAX_BASE_WINDOW_DAYS = 182L
+        val CHART_RANGE_OPTIONS = setOf(0, 1, 6, 12)
     }
 }
