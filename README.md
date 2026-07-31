@@ -20,6 +20,8 @@ does not request network access, create accounts, or include analytics.
 - Material 3 Compose shell based on the first Pixel 7 Pro design direction
 - Room-backed overview with fixed/chained series, headline-rate states,
   contribution explanations, fresh coverage, and stale-product detail
+- Index chart present in every state: an empty axis at zero until a second
+  monthly point exists, and one point per calendar month thereafter
 - Receipt inbox and selected receipt detail with image/OCR evidence, retry,
   history, and unique durable WorkManager extraction
 - Full receipt correction: catalogue bootstrap, merchant/date/totals/line
@@ -38,7 +40,10 @@ does not request network access, create accounts, or include analytics.
   coverage, category weights, chain linking, and headline-rate estimates
 - Configurable base window, category-weight overrides, and in-app methodology
 - Vico charts, Hilt dependency injection, coroutines, and Flow
-- Debug-only sample data for manual QA
+- Debug-only sample data for manual QA, never restored once the user has reset
+- Reset that returns the app to a first-launch state — database, private
+  receipt images, cached scans, and settings — serialised against in-flight
+  receipt capture and extraction so nothing survives the wipe
 
 Optional privacy locking/data-retention controls and local reminders are
 deliberately deferred.
@@ -57,7 +62,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 ```
 
 The debug APK is written to
-`app/build/outputs/apk/debug/app-debug.apk`.
+`app/build/outputs/apk/debug/pocket-index-0.1.0-debug.apk`.
 
 ## Project structure
 

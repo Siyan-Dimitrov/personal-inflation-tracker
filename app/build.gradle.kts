@@ -6,6 +6,8 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
+val appVersionName = "0.1.0"
+
 android {
     namespace = "com.siyandimitrov.pocketindex"
     compileSdk = 36
@@ -15,7 +17,7 @@ android {
         minSdk = 23
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -48,6 +50,11 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+// Names the artifact pocket-index-<version>-<build type>.apk rather than app-debug.apk.
+base {
+    archivesName.set("pocket-index-$appVersionName")
 }
 
 kapt {

@@ -18,6 +18,34 @@ install and visual launch at Pixel 7 Pro dimensions (1080 × 2340 override,
 420 dpi). The app still has no network permission, account, backend,
 analytics, or telemetry.
 
+### Follow-up work completed the same day
+
+- **Reset to zero.** "Reset all data" wipes the database, private receipt
+  images, cached scanner pages, and settings on every build type, and records a
+  durable flag first so debug builds never restore the demo history afterwards,
+  including when a later step fails or the process dies mid-reset.
+- **Reset and capture races.** `LocalDataLock` serialises receipt capture and
+  extraction against the wipe. The extraction worker re-checks that its receipt
+  still exists before creating a merchant, because OCR deliberately runs outside
+  the lock so a reset never waits on it.
+- **Chart presence.** The fixed-basket card stays on screen in every state with
+  an empty gridded axis at zero, rather than disappearing when there is no
+  history and reading as a broken graph.
+- **Monthly points.** A base window closing a few days before a month end no
+  longer produces two points, and two identical month labels, inside one
+  calendar month.
+
+Known gaps in that work, for whoever picks it up next:
+
+- There is no automated coverage of the reset path or the preference reset. The
+  suite is pure JVM with no Robolectric, so those view models are not testable
+  as they stand.
+- The capture/reset race is verified by construction and code review only.
+  Exercising it needs the document scanner plus a reset fired mid-scan, which
+  the available emulator tooling cannot drive.
+- A failed reset surfaces `error.message` verbatim, so a raw SQLite message can
+  reach the user.
+
 ## Objective
 
 Continue Pocket Index from the current tested Android foundation and turn it
