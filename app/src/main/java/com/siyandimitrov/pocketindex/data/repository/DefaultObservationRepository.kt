@@ -9,6 +9,8 @@ import javax.inject.Singleton
 class DefaultObservationRepository @Inject constructor(
     private val observations: PriceObservationDao,
 ) : ObservationRepository {
+    override fun observeAll() = observations.observeAll()
+
     override fun observeProductTimeline(productId: Long) =
         observations.observeForProduct(productId)
 

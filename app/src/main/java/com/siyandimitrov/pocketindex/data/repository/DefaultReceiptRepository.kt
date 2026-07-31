@@ -7,6 +7,9 @@ import com.siyandimitrov.pocketindex.data.local.PocketIndexDatabase
 import com.siyandimitrov.pocketindex.data.local.PriceObservationEntity
 import com.siyandimitrov.pocketindex.data.local.ReceiptEntity
 import com.siyandimitrov.pocketindex.data.local.ReceiptStatus
+import java.text.ParsePosition
+import java.text.SimpleDateFormat
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -36,6 +39,67 @@ class DefaultReceiptRepository @Inject constructor(
                 currency = receipt.currency,
             ),
         )
+
+    override suspend fun createManualReceipt(receipt: NewManualReceipt): Long {
+        validateReceiptCorrection(
+            ReceiptCorrection(
+                merchantId = receipt.merchantId,
+                purchasedAt = receipt.purchasedAt,
+                subtotalMinor = receipt.subtotalMinor,
+                taxMinor = receipt.taxMinor,
+                totalMinor = receipt.totalMinor,
+            ),
+        )
+        return receipts.insert(
+            ReceiptEntity(
+                merchantId = receipt.merchantId,
+                purchasedAt = receipt.purchasedAt,
+                totalMinor = receipt.totalMinor,
+                subtotalMinor = receipt.subtotalMinor,
+                taxMinor = receipt.taxMinor,
+                currency = receipt.currency,
+                imagePath = "",
+                status = ReceiptStatus.NEEDS_REVIEW,
+            ),
+        )
+    }
+
+    override suspend fun addManualLineItem(
+        receiptId: Long,
+        item: NewManualLineItem,
+    ): Long = database.withTransaction {
+        val receipt = checkNotNull(receipts.getById(receiptId)) {
+            "Receipt $receiptId does not exist."
+        }
+        require(receipt.status != ReceiptStatus.CONFIRMED) {
+            "A confirmed receipt cannot be changed."
+        }
+        val evidence = item.rawText.trim().take(240)
+        require(evidence.isNotEmpty()) { "A line description is required." }
+        require(item.quantity > 0.0 && item.quantity.isFinite()) {
+            "Quantity must be greater than zero."
+        }
+        require(
+            item.productId == null ||
+                (item.unitPriceMinor >= 0 && item.lineTotalMinor >= 0),
+        ) {
+            "Prices cannot be negative."
+        }
+        item.productId?.let { productId ->
+            checkNotNull(products.getById(productId)) { "Product $productId does not exist." }
+        }
+        receipts.insertLineItem(
+            LineItemEntity(
+                receiptId = receiptId,
+                rawText = evidence,
+                quantity = item.quantity,
+                unitPriceMinor = item.unitPriceMinor,
+                lineTotalMinor = item.lineTotalMinor,
+                productId = item.productId,
+                matchConfidence = item.productId?.let { 1.0 },
+            ),
+        )
+    }
 
     override suspend fun saveExtraction(receiptId: Long, extraction: ReceiptExtraction) {
         require(extraction.status != ReceiptStatus.CONFIRMED) {
@@ -69,11 +133,19 @@ class DefaultReceiptRepository @Inject constructor(
         }
     }
 
-    override suspend fun confirmReceipt(receiptId: Long, items: List<ConfirmedLineItem>) {
+    override suspend fun confirmReceipt(
+        receiptId: Long,
+        correction: ReceiptCorrection,
+        items: List<ConfirmedLineItem>,
+    ) {
         require(items.isNotEmpty()) { "At least one line item is required." }
+        validateReceiptCorrection(correction)
         database.withTransaction {
             val receipt = checkNotNull(receipts.getById(receiptId)) {
                 "Receipt $receiptId does not exist."
+            }
+            require(receipt.status != ReceiptStatus.CONFIRMED) {
+                "This receipt has already been confirmed."
             }
             val receiptDetails = checkNotNull(receipts.getWithDetails(receiptId))
             val existingLineIds = receiptDetails.lineItems.mapTo(mutableSetOf()) { it.id }
@@ -81,33 +153,49 @@ class DefaultReceiptRepository @Inject constructor(
             require(items.map { it.lineItemId }.toSet().size == items.size) {
                 "A line item can only be confirmed once."
             }
-            require(items.all { it.lineItemId in existingLineIds }) {
-                "Every confirmation must belong to receipt $receiptId."
+            require(items.mapTo(mutableSetOf()) { it.lineItemId } == existingLineIds) {
+                "Every receipt line must be matched or explicitly excluded."
             }
-            val replacements = items.associateBy { it.lineItemId }
-            val reviewedSubtotal = checkNotNull(receipts.getWithDetails(receiptId))
-                .lineItems
-                .sumOf { replacements[it.id]?.lineTotalMinor ?: it.lineTotalMinor }
-            val expectedSubtotal = receipt.subtotalMinor
-                ?: (receipt.totalMinor - (receipt.taxMinor ?: 0))
-            require(abs(reviewedSubtotal - expectedSubtotal) <= RECONCILIATION_TOLERANCE_MINOR) {
-                "Line items differ from the receipt subtotal by more than 2 minor units."
-            }
-            receipt.taxMinor?.let { tax ->
-                require(abs(expectedSubtotal + tax - receipt.totalMinor) <= RECONCILIATION_TOLERANCE_MINOR) {
-                    "Subtotal and tax do not reconcile with the receipt total."
-                }
+            require(items.any { !it.excluded }) { "At least one product line is required." }
+            // Evidence-only lines still belong to the receipt arithmetic. For example, a
+            // refundable deposit or discount can be excluded from inflation observations while
+            // its signed amount remains necessary to reproduce the printed subtotal.
+            val reviewedSubtotal = items.sumOf(ConfirmedLineItem::lineTotalMinor)
+            require(
+                receiptReconciles(
+                    reviewedSubtotal = reviewedSubtotal,
+                    subtotalMinor = correction.subtotalMinor,
+                    taxMinor = correction.taxMinor,
+                    totalMinor = correction.totalMinor,
+                ),
+            ) {
+                "Product lines, subtotal, tax, and total must reconcile within £0.02."
             }
 
+            receipts.updateCorrectableDetails(
+                receiptId = receiptId,
+                merchantId = correction.merchantId,
+                purchasedAt = correction.purchasedAt,
+                subtotalMinor = correction.subtotalMinor,
+                taxMinor = correction.taxMinor,
+                totalMinor = correction.totalMinor,
+            )
             items.forEach { item ->
-                require(item.quantity > 0.0) { "Quantity must be greater than zero." }
-                require(item.packSize > 0.0) { "Pack size must be greater than zero." }
-                require(item.unitPriceMinor >= 0 && item.lineTotalMinor >= 0) {
-                    "Prices cannot be negative."
+                require(item.quantity > 0.0 && item.quantity.isFinite()) {
+                    "Quantity must be greater than zero."
+                }
+                if (!item.excluded) {
+                    requireNotNull(item.productId) { "Choose a product for every included line." }
+                    require((item.packSize ?: 0.0) > 0.0 && item.packSize?.isFinite() == true) {
+                        "Pack size must be greater than zero."
+                    }
+                    require(item.unitPriceMinor >= 0 && item.lineTotalMinor >= 0) {
+                        "Product prices cannot be negative."
+                    }
                 }
                 receipts.updateLineItemMatch(
                     lineItemId = item.lineItemId,
-                    productId = item.productId,
+                    productId = item.productId.takeUnless { item.excluded },
                     quantity = item.quantity,
                     unitPriceMinor = item.unitPriceMinor,
                     lineTotalMinor = item.lineTotalMinor,
@@ -115,21 +203,24 @@ class DefaultReceiptRepository @Inject constructor(
                     userConfirmed = true,
                 )
                 observations.deleteForLineItem(item.lineItemId)
+                if (item.excluded) return@forEach
+                val productId = requireNotNull(item.productId)
+                val packSize = requireNotNull(item.packSize)
                 observations.insert(
                     PriceObservationEntity(
-                        productId = item.productId,
-                        observedAt = receipt.purchasedAt,
-                        unitPriceMicros = unitPriceMicros(item.unitPriceMinor, item.packSize),
+                        productId = productId,
+                        observedAt = correction.purchasedAt,
+                        unitPriceMicros = unitPriceMicros(item.unitPriceMinor, packSize),
                         shelfPriceMinor = item.unitPriceMinor,
-                        packSize = item.packSize,
-                        merchantId = receipt.merchantId,
+                        packSize = packSize,
+                        merchantId = correction.merchantId,
                         source = ObservationSource.RECEIPT,
                         receiptLineItemId = item.lineItemId,
                     ),
                 )
                 val rawText = rawTextByLineId.getValue(item.lineItemId)
-                val product = checkNotNull(products.getById(item.productId)) {
-                    "Product ${item.productId} does not exist."
+                val product = checkNotNull(products.getById(productId)) {
+                    "Product $productId does not exist."
                 }
                 products.updateAliases(
                     productId = product.id,
@@ -177,4 +268,36 @@ class DefaultReceiptRepository @Inject constructor(
             return "[$escaped]"
         }
     }
+}
+
+internal fun receiptReconciles(
+    reviewedSubtotal: Long,
+    subtotalMinor: Long?,
+    taxMinor: Long?,
+    totalMinor: Long,
+    toleranceMinor: Long = 2L,
+): Boolean {
+    val expectedSubtotal = subtotalMinor ?: (totalMinor - (taxMinor ?: 0L))
+    if (abs(reviewedSubtotal - expectedSubtotal) > toleranceMinor) return false
+    return taxMinor == null || abs(expectedSubtotal + taxMinor - totalMinor) <= toleranceMinor
+}
+
+private fun validateReceiptCorrection(correction: ReceiptCorrection) {
+    require(correction.purchasedAt.isStrictIsoDate()) {
+        "Use a purchase date in YYYY-MM-DD format."
+    }
+    require(correction.totalMinor >= 0) { "Total cannot be negative." }
+    require(correction.subtotalMinor == null || correction.subtotalMinor >= 0) {
+        "Subtotal cannot be negative."
+    }
+    require(correction.taxMinor == null || correction.taxMinor >= 0) {
+        "Tax cannot be negative."
+    }
+}
+
+private fun String.isStrictIsoDate(): Boolean {
+    if (!matches(Regex("""\d{4}-\d{2}-\d{2}"""))) return false
+    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }
+    val position = ParsePosition(0)
+    return formatter.parse(this, position) != null && position.index == length
 }

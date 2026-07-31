@@ -22,6 +22,8 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ElectricBolt
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Functions
+import androidx.compose.material.icons.rounded.Percent
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
@@ -62,9 +64,13 @@ private data class RecurringBill(
 fun SettingsScreen(modifier: Modifier = Modifier) {
     val viewModel: RecurringBillsViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val inflationViewModel: InflationSettingsViewModel = hiltViewModel()
+    val inflationState by inflationViewModel.uiState.collectAsStateWithLifecycle()
     var showBillEditor by remember { mutableStateOf(false) }
     var editingBill by remember { mutableStateOf<RecurringBillUi?>(null) }
     var pendingRemoval by remember { mutableStateOf<RecurringBillUi?>(null) }
+    var editingCategoryWeight by remember { mutableStateOf<CategoryWeightUi?>(null) }
+    var showMethodology by remember { mutableStateOf(false) }
     val displayBills = state.bills.map { bill ->
         RecurringBill(
             source = bill,
@@ -119,6 +125,19 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
             },
         )
+    }
+    editingCategoryWeight?.let { category ->
+        WeightEditorDialog(
+            category = category,
+            onDismiss = { editingCategoryWeight = null },
+            onSave = { value ->
+                inflationViewModel.setCategoryWeight(category.id, value)
+                editingCategoryWeight = null
+            },
+        )
+    }
+    if (showMethodology) {
+        MethodologyDialog(onDismiss = { showMethodology = false })
     }
 
     LazyColumn(
@@ -228,6 +247,23 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         item {
             Text(
+                text = "Your index",
+                modifier = Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+            )
+        }
+
+        item {
+            IndexSettingsCard(
+                state = inflationState,
+                onBaseWindowSelected = inflationViewModel::setBaseWindowDays,
+                onEditCategory = { editingCategoryWeight = it },
+                onShowMethodology = { showMethodology = true },
+            )
+        }
+
+        item {
+            Text(
                 text = "Data & privacy",
                 modifier = Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.titleLarge,
@@ -266,6 +302,211 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun IndexSettingsCard(
+    state: InflationSettingsUiState,
+    onBaseWindowSelected: (Long) -> Unit,
+    onEditCategory: (CategoryWeightUi) -> Unit,
+    onShowMethodology: () -> Unit,
+) {
+    var baseWindowMenuExpanded by remember { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column {
+            Box {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { baseWindowMenuExpanded = true }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.Functions,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text("Base window", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "${state.baseWindowDays / 7} weeks from your first price",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text("›", style = MaterialTheme.typography.titleLarge)
+                }
+                DropdownMenu(
+                    expanded = baseWindowMenuExpanded,
+                    onDismissRequest = { baseWindowMenuExpanded = false },
+                ) {
+                    listOf(28L, 56L, 84L, 112L).forEach { days ->
+                        DropdownMenuItem(
+                            text = { Text("${days / 7} weeks") },
+                            onClick = {
+                                onBaseWindowSelected(days)
+                                baseWindowMenuExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.Percent,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text("Category weights", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Automatic from base spending unless you set an override",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            state.categories.forEach { category ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onEditCategory(category) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = category.name,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = category.overridePercent?.let {
+                            "%.1f%%".format(java.util.Locale.UK, it)
+                        } ?: "Automatic",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            state.validationMessage?.let { message ->
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            TextButton(
+                onClick = onShowMethodology,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text("Read how your index is calculated")
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeightEditorDialog(
+    category: CategoryWeightUi,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var value by remember(category.id) {
+        mutableStateOf(
+            category.overridePercent?.let {
+                "%.1f".format(java.util.Locale.UK, it)
+            }.orEmpty(),
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${category.name} weight") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Enter a share of your headline basket. Leave it blank to derive the weight from base spending; remaining weight is distributed automatically.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("Weight (%)") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun MethodologyDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("How Pocket Index works") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MethodologyParagraph(
+                    "Base basket",
+                    "Products enter after two prices in the configured opening window; recurring bills need one. Quantities and unit prices set the initial spending weights.",
+                )
+                MethodologyParagraph(
+                    "Price changes",
+                    "The latest price at or before each month is carried forward. Pack size is normalised, so shrinkflation appears as a higher unit price.",
+                )
+                MethodologyParagraph(
+                    "Shops and substitution",
+                    "Current prices are averaged across merchants. Switching to a cheaper shop is therefore not counted as deflation. After a year, the chained view updates the basket annually to show substitution separately.",
+                )
+                MethodologyParagraph(
+                    "Confidence",
+                    "Grocery prices older than 90 days remain in the calculation but reduce fresh coverage. Early rates are annualised until a full year-on-year comparison is available.",
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        },
+    )
+}
+
+@Composable
+private fun MethodologyParagraph(title: String, body: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(
+            body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

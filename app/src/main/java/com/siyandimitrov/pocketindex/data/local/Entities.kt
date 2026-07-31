@@ -10,6 +10,7 @@ enum class ReceiptStatus {
     PENDING,
     NEEDS_REVIEW,
     CONFIRMED,
+    FAILED,
 }
 
 enum class UnitType {

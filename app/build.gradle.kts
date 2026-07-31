@@ -82,6 +82,8 @@ dependencies {
     kapt("androidx.room:room-compiler:2.8.4")
 
     implementation("androidx.work:work-runtime-ktx:2.11.0")
+    implementation("androidx.hilt:hilt-work:1.3.0")
+    kapt("androidx.hilt:hilt-compiler:1.3.0")
     implementation("com.google.dagger:hilt-android:2.58")
     kapt("com.google.dagger:hilt-compiler:2.58")
 

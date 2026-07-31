@@ -32,4 +32,10 @@ interface RecurringItemDao {
 
     @Query("UPDATE recurring_items SET active = :active WHERE id = :id")
     suspend fun setActive(id: Long, active: Boolean): Int
+
+    @Query("UPDATE recurring_items SET product_id = :targetProductId WHERE product_id = :sourceProductId")
+    suspend fun reassignProduct(sourceProductId: Long, targetProductId: Long): Int
+
+    @Query("DELETE FROM recurring_items WHERE id = :id")
+    suspend fun deleteById(id: Long): Int
 }

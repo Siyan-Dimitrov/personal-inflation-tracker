@@ -18,7 +18,16 @@ does not request network access, create accounts, or include analytics.
 ## Implemented
 
 - Material 3 Compose shell based on the first Pixel 7 Pro design direction
-- Overview, receipt review, product history, and recurring-bills screens
+- Room-backed overview with fixed/chained series, headline-rate states,
+  contribution explanations, fresh coverage, and stale-product detail
+- Receipt inbox and selected receipt detail with image/OCR evidence, retry,
+  history, and unique durable WorkManager extraction
+- Full receipt correction: catalogue bootstrap, merchant/date/totals/line
+  editing, exclusions, manual lines/receipts/observations, 2p reconciliation,
+  and alias learning
+- Searchable real product catalogue with freshness/fixed-basket filters,
+  merchant prices, unit-price and pack-size charts, pack changes, editing, and
+  transactional duplicate merging
 - Add and edit recurring bills, including cadence; soft removal keeps price history
 - Google ML Kit document scanning and bundled on-device OCR
 - Deterministic UK receipt parsing, pack-size extraction, fuzzy matching, and
@@ -27,8 +36,12 @@ does not request network access, create accounts, or include analytics.
   observations, aliases, and recurring bills
 - Fixed-basket Laspeyres calculations, per-merchant carry-forward, staleness,
   coverage, category weights, chain linking, and headline-rate estimates
+- Configurable base window, category-weight overrides, and in-app methodology
 - Vico charts, Hilt dependency injection, coroutines, and Flow
 - Debug-only sample data for manual QA
+
+Optional privacy locking/data-retention controls and local reminders are
+deliberately deferred.
 
 See [personal_inflation_tracker.md](personal_inflation_tracker.md) for the
 complete product and calculation specification.

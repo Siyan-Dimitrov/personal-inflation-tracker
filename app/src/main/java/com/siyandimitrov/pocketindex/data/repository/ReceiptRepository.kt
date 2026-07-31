@@ -11,6 +11,12 @@ interface ReceiptRepository {
     fun observeReceipt(receiptId: Long): Flow<ReceiptWithDetails?>
     fun observeConfirmedSpendByCategory(): Flow<List<CategorySpend>>
     suspend fun createPendingReceipt(receipt: NewReceipt): Long
+    suspend fun createManualReceipt(receipt: NewManualReceipt): Long
+    suspend fun addManualLineItem(receiptId: Long, item: NewManualLineItem): Long
     suspend fun saveExtraction(receiptId: Long, extraction: ReceiptExtraction)
-    suspend fun confirmReceipt(receiptId: Long, items: List<ConfirmedLineItem>)
+    suspend fun confirmReceipt(
+        receiptId: Long,
+        correction: ReceiptCorrection,
+        items: List<ConfirmedLineItem>,
+    )
 }

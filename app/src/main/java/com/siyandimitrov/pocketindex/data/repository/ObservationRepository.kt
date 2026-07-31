@@ -5,6 +5,7 @@ import com.siyandimitrov.pocketindex.data.local.ProductObservationCount
 import kotlinx.coroutines.flow.Flow
 
 interface ObservationRepository {
+    fun observeAll(): Flow<List<PriceObservationEntity>>
     fun observeProductTimeline(productId: Long): Flow<List<PriceObservationEntity>>
     fun observeCountsByProduct(): Flow<List<ProductObservationCount>>
     suspend fun addObservation(observation: NewObservation): Long

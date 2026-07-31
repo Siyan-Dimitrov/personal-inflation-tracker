@@ -2,6 +2,7 @@ package com.siyandimitrov.pocketindex.data.repository
 
 import com.siyandimitrov.pocketindex.data.local.ObservationSource
 import com.siyandimitrov.pocketindex.data.local.ReceiptStatus
+import com.siyandimitrov.pocketindex.data.local.UnitType
 import kotlin.math.roundToLong
 
 data class NewReceipt(
@@ -32,12 +33,48 @@ data class ReceiptExtraction(
 
 data class ConfirmedLineItem(
     val lineItemId: Long,
-    val productId: Long,
+    val productId: Long?,
     val quantity: Double,
     val unitPriceMinor: Long,
     val lineTotalMinor: Long,
-    val packSize: Double,
+    val packSize: Double?,
     val matchConfidence: Double? = null,
+    val excluded: Boolean = false,
+)
+
+/**
+ * Correctable receipt fields. Image and OCR evidence are intentionally absent.
+ */
+data class ReceiptCorrection(
+    val merchantId: Long?,
+    val purchasedAt: String,
+    val subtotalMinor: Long?,
+    val taxMinor: Long?,
+    val totalMinor: Long,
+)
+
+data class NewManualReceipt(
+    val merchantId: Long?,
+    val purchasedAt: String,
+    val subtotalMinor: Long?,
+    val taxMinor: Long?,
+    val totalMinor: Long,
+    val currency: String = "GBP",
+)
+
+data class NewManualLineItem(
+    val rawText: String,
+    val quantity: Double = 1.0,
+    val unitPriceMinor: Long,
+    val lineTotalMinor: Long,
+    val productId: Long? = null,
+)
+
+data class NewCatalogProduct(
+    val canonicalName: String,
+    val categoryId: Long,
+    val unitType: UnitType,
+    val packSize: Double?,
 )
 
 data class NewObservation(

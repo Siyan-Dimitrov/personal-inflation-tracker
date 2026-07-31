@@ -1,5 +1,23 @@
 # Pocket Index — Next Session
 
+## Status after 31 July 2026
+
+Features 1–5 in this handoff are implemented and validated:
+
+- Complete receipt correction and catalogue bootstrap.
+- Live Room-backed personal-inflation dashboard.
+- Receipt inbox, history, selected-receipt detail, retry, and durable WorkManager extraction.
+- Real searchable basket and product browser.
+- Inflation contribution, coverage, substitution, weight, base-window, and methodology explanations.
+
+Features 6 and 7 were explicitly deferred by the user. Do not begin the
+privacy-lock/data-control or reminder tracks unless they are requested again.
+
+Validation completed with a clean `testDebugUnitTest assembleDebug`, plus an
+install and visual launch at Pixel 7 Pro dimensions (1080 × 2340 override,
+420 dpi). The app still has no network permission, account, backend,
+analytics, or telemetry.
+
 ## Objective
 
 Continue Pocket Index from the current tested Android foundation and turn it
@@ -8,7 +26,7 @@ analytics, telemetry, or network permission.
 
 ## Selected features
 
-### 1. Complete receipt correction and catalogue bootstrap
+### 1. Complete receipt correction and catalogue bootstrap — COMPLETE
 
 This is the highest-priority production blocker. A release installation starts
 with an empty product catalogue, so every receipt must be reviewable without
@@ -36,7 +54,7 @@ Definition of done:
   database externally.
 - Confirmed corrections continue to teach product aliases.
 
-### 2. Live personal-inflation dashboard
+### 2. Live personal-inflation dashboard — COMPLETE
 
 Replace the hard-coded headline, chart, coverage, and category drivers with
 Room-backed calculations using the existing pure Kotlin domain engine.
@@ -61,7 +79,7 @@ Definition of done:
 - Displayed values can be traced to persisted observations.
 - The UI clearly distinguishes early estimates from a full YoY rate.
 
-### 3. Receipt inbox, history, and recovery
+### 3. Receipt inbox, history, and recovery — COMPLETE
 
 Replace the single review destination and sample fallback with a complete
 receipt workflow.
@@ -84,7 +102,7 @@ Definition of done:
 - Failed work can be retried without rescanning.
 - Every stored receipt is discoverable from the UI.
 
-### 4. Real basket and product browser
+### 4. Real basket and product browser — COMPLETE
 
 Replace the fixed Whole Milk example with persisted catalogue and observation
 data.
@@ -108,7 +126,7 @@ Definition of done:
 - Charts update from real observations.
 - Pack-size changes are visible separately from shelf-price changes.
 
-### 5. Inflation explainability
+### 5. Inflation explainability — COMPLETE
 
 Make the headline understandable rather than presenting it as a black box.
 
@@ -130,7 +148,7 @@ Definition of done:
 - The UI explains substitution and why changing shops is not treated as
   deflation.
 
-### 6. Optional privacy lock and data controls
+### 6. Optional privacy lock and data controls — DEFERRED BY USER
 
 Keep this opt-in so the app remains convenient for users who already rely on
 device security.
@@ -151,7 +169,7 @@ Definition of done:
 - Users can manage receipt images without accidentally corrupting the index.
 - The app continues to request no network permission.
 
-### 7. Local reminders
+### 7. Local reminders — DEFERRED BY USER
 
 Add only user-requested, low-noise notifications.
 
@@ -172,7 +190,7 @@ Definition of done:
 
 ## Recommended implementation order
 
-### Milestone A — Real-data receipt loop
+### Milestone A — Real-data receipt loop — COMPLETE
 
 1. Remove sample fallbacks and add release-style empty states.
 2. Add inline product creation and full receipt correction.
@@ -180,7 +198,7 @@ Definition of done:
 4. Build the receipt inbox and selected-receipt navigation.
 5. Move OCR/extraction into WorkManager.
 
-### Milestone B — Real inflation experience
+### Milestone B — Real inflation experience — COMPLETE
 
 1. Build the Room-to-domain calculation adapter.
 2. Replace the overview with real metrics and series.
@@ -188,12 +206,13 @@ Definition of done:
 4. Add contribution and coverage explanations.
 5. Add settings for weights and base window.
 
-### Milestone C — Trust and retention
+### Milestone C — Trust and retention — DEFERRED
 
-1. Add the optional privacy lock.
-2. Add receipt-image retention and safe deletion controls.
-3. Add opt-in local reminders.
+1. Add the optional privacy lock. **Deferred by user.**
+2. Add receipt-image retention and safe deletion controls. **Deferred by user.**
+3. Add opt-in local reminders. **Deferred by user.**
 4. Run unit, persistence, UI, and Pixel 7 Pro emulator regression tests.
+   **Completed for the implemented scope.**
 
 ## Explicitly out of scope
 

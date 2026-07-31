@@ -29,14 +29,18 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.siyandimitrov.pocketindex.ui.basket.BasketScreen
 import com.siyandimitrov.pocketindex.ui.capture.ReceiptCaptureViewModel
 import com.siyandimitrov.pocketindex.ui.overview.OverviewScreen
 import com.siyandimitrov.pocketindex.ui.receipts.ReceiptsScreen
+import com.siyandimitrov.pocketindex.ui.receipts.ReceiptDetailScreen
+import com.siyandimitrov.pocketindex.ui.receipts.ReceiptInboxScreen
 import com.siyandimitrov.pocketindex.ui.settings.SettingsScreen
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -89,14 +93,24 @@ fun PocketIndexApp() {
             }
         }
     }
+    val launchScanner = {
+        scanner.getStartScanIntent(activity)
+            .addOnSuccessListener { intentSender ->
+                scannerLauncher.launch(
+                    IntentSenderRequest.Builder(intentSender).build(),
+                )
+            }
+            .addOnFailureListener(captureViewModel::reportScannerFailure)
+        Unit
+    }
 
     LaunchedEffect(captureState.completedReceiptId, captureState.message) {
-        captureState.message?.let { snackbarHostState.showSnackbar(it) }
-        if (captureState.completedReceiptId != null) {
-            navController.navigate("receipts") {
+        captureState.completedReceiptId?.let { receiptId ->
+            navController.navigate("receipt/$receiptId") {
                 launchSingleTop = true
             }
         }
+        captureState.message?.let { snackbarHostState.showSnackbar(it) }
         if (captureState.message != null || captureState.completedReceiptId != null) {
             captureViewModel.clearEvent()
         }
@@ -147,18 +161,42 @@ fun PocketIndexApp() {
             composable("overview") {
                 OverviewScreen(
                     isScanning = captureState.isProcessing,
-                    onScanReceipt = {
-                        scanner.getStartScanIntent(activity)
-                            .addOnSuccessListener { intentSender ->
-                                scannerLauncher.launch(
-                                    IntentSenderRequest.Builder(intentSender).build(),
-                                )
-                            }
-                            .addOnFailureListener(captureViewModel::reportScannerFailure)
-                    },
+                    onScanReceipt = launchScanner,
                 )
             }
             composable("receipts") {
+                ReceiptInboxScreen(
+                    onReceiptSelected = { receiptId ->
+                        navController.navigate("receipt/$receiptId")
+                    },
+                    onScanReceipt = launchScanner,
+                    onAddManualReceipt = {
+                        navController.navigate("receipt-entry")
+                    },
+                )
+            }
+            composable("receipt-entry") {
+                ReceiptsScreen(startWithManualReceipt = true)
+            }
+            composable(
+                route = "receipt/{receiptId}",
+                arguments = listOf(
+                    navArgument("receiptId") { type = NavType.LongType },
+                ),
+            ) {
+                ReceiptDetailScreen(
+                    onBack = navController::popBackStack,
+                    onReview = { receiptId ->
+                        navController.navigate("receipt-review/$receiptId")
+                    },
+                )
+            }
+            composable(
+                route = "receipt-review/{receiptId}",
+                arguments = listOf(
+                    navArgument("receiptId") { type = NavType.LongType },
+                ),
+            ) {
                 ReceiptsScreen()
             }
             composable("basket") {

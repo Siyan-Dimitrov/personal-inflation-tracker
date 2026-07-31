@@ -8,6 +8,20 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PriceObservationDao {
+    @Query("SELECT * FROM price_observations ORDER BY observed_at ASC, id ASC")
+    fun observeAll(): Flow<List<PriceObservationEntity>>
+
+    @Query(
+        """
+        SELECT price_observations.*, line_items.quantity AS receipt_quantity
+        FROM price_observations
+        LEFT JOIN line_items
+            ON line_items.id = price_observations.receipt_line_item_id
+        ORDER BY price_observations.observed_at ASC, price_observations.id ASC
+        """,
+    )
+    fun observeAllForInflation(): Flow<List<AnalyticalPriceObservation>>
+
     @Query(
         """
         SELECT * FROM price_observations
@@ -66,4 +80,7 @@ interface PriceObservationDao {
 
     @Query("DELETE FROM price_observations WHERE receipt_line_item_id = :lineItemId")
     suspend fun deleteForLineItem(lineItemId: Long)
+
+    @Query("UPDATE price_observations SET product_id = :targetProductId WHERE product_id = :sourceProductId")
+    suspend fun reassignProduct(sourceProductId: Long, targetProductId: Long): Int
 }

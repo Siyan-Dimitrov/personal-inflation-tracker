@@ -83,6 +83,29 @@ interface ReceiptDao {
 
     @Query(
         """
+        UPDATE receipts
+        SET merchant_id = :merchantId,
+            purchased_at = :purchasedAt,
+            subtotal_minor = :subtotalMinor,
+            tax_minor = :taxMinor,
+            total_minor = :totalMinor
+        WHERE id = :receiptId
+        """,
+    )
+    suspend fun updateCorrectableDetails(
+        receiptId: Long,
+        merchantId: Long?,
+        purchasedAt: String,
+        subtotalMinor: Long?,
+        taxMinor: Long?,
+        totalMinor: Long,
+    )
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertLineItem(item: LineItemEntity): Long
+
+    @Query(
+        """
         UPDATE line_items
         SET product_id = :productId,
             quantity = :quantity,
@@ -108,6 +131,9 @@ interface ReceiptDao {
 
     @Query("SELECT COUNT(*) FROM receipts")
     suspend fun count(): Int
+
+    @Query("UPDATE line_items SET product_id = :targetProductId WHERE product_id = :sourceProductId")
+    suspend fun reassignLineItems(sourceProductId: Long, targetProductId: Long): Int
 
     @Query(
         """

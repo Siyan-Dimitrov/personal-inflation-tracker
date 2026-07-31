@@ -37,6 +37,9 @@ interface ProductDao {
     @Query("UPDATE products SET aliases = :aliases WHERE id = :productId")
     suspend fun updateAliases(productId: Long, aliases: String)
 
+    @Query("DELETE FROM products WHERE id = :productId")
+    suspend fun deleteById(productId: Long): Int
+
     @Query("SELECT COUNT(*) FROM products")
     suspend fun count(): Int
 }
