@@ -299,17 +299,18 @@ object InflationDashboardCalculator {
         require(end >= start)
         if (end == start) return listOf(start)
         val dates = mutableListOf(start)
+        // The base point already stands for its own calendar month, so the monthly points
+        // resume from the end of the following month. Taking the base month's end as well
+        // would put two points, and two identical month labels, inside one month.
         val cursor = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
             timeInMillis = Math.multiplyExact(start.value, MILLIS_PER_DAY)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.MONTH, 1)
             set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-            if (timeInMillis / MILLIS_PER_DAY <= start.value) {
-                add(Calendar.MONTH, 1)
-                set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-            }
         }
         while (cursor.timeInMillis / MILLIS_PER_DAY < end.value) {
             dates += EpochDay(cursor.timeInMillis / MILLIS_PER_DAY)

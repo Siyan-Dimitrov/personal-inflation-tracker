@@ -1,5 +1,9 @@
 package com.siyandimitrov.pocketindex.domain
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -88,6 +92,29 @@ class InflationDashboardCalculatorTest {
     }
 
     @Test
+    fun `gives each calendar month a single point when the base window ends mid-month`() {
+        val input = input(
+            observations = listOf(
+                observation(1, PRODUCT_ONE, 0, 100),
+                observation(2, PRODUCT_ONE, 1, 100),
+                bill(3, PRODUCT_TWO, 0, 200),
+            ),
+        )
+
+        // The base window closes on 1970-01-20, eleven days before the January month end.
+        val ready = assertIs<InflationDashboardCalculation.Ready>(
+            InflationDashboardCalculator.calculate(
+                input = input,
+                asOf = EpochDay(100),
+                configuration = IndexConfiguration(baseWindowDays = 20),
+            ),
+        )
+
+        val months = ready.fixedSeries.map { it.asOf.month() }
+        assertEquals(listOf("1970-01", "1970-02", "1970-03", "1970-04"), months)
+    }
+
+    @Test
     fun `provides chained series after a viable annual rebase`() {
         val input = input(
             observations = listOf(
@@ -152,6 +179,10 @@ class InflationDashboardCalculatorTest {
         observedOn = EpochDay(day),
         periodPriceMinor = price,
     )
+
+    private fun EpochDay.month(): String = SimpleDateFormat("yyyy-MM", Locale.UK).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }.format(Date(Math.multiplyExact(value, 86_400_000L)))
 
     private companion object {
         val PRODUCT_ONE = ProductId(1)
