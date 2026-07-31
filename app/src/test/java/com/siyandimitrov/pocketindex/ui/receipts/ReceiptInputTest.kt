@@ -8,6 +8,13 @@ import org.junit.Test
 
 class ReceiptInputTest {
     @Test
+    fun `formats signed minor units as editable money`() {
+        assertEquals("-0.50", (-50L).toMoneyInput())
+        assertEquals("-12.05", (-1_205L).toMoneyInput())
+        assertEquals("7.65", 765L.toMoneyInput())
+    }
+
+    @Test
     fun `money input converts exactly to minor units`() {
         assertEquals(0L, "0".toMinorUnits())
         assertEquals(5L, "0.05".toMinorUnits())

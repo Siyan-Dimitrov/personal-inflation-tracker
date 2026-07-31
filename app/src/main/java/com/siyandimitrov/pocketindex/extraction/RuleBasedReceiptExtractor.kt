@@ -18,7 +18,7 @@ class RuleBasedReceiptExtractor(
         ocrResult: OcrResult,
         candidates: List<ProductCandidate>,
     ): ExtractionResult {
-        val sourceLines = ocrResult.lines.ifEmpty {
+        val sourceLines = mergeSameRowFragments(ocrResult.lines).ifEmpty {
             ocrResult.text.lines().filter(String::isNotBlank).map { OcrLine(it) }
         }
         val classifiedTotals = sourceLines.mapIndexedNotNull { index, line ->
@@ -42,6 +42,60 @@ class RuleBasedReceiptExtractor(
             totals = totals,
             validation = validation,
         )
+    }
+
+    /**
+     * ML Kit can return a receipt's description and right-aligned price as separate text lines
+     * even when they share the same visual row. Reassemble those fragments from their geometry
+     * before applying the deliberately conservative price-at-end parser.
+     */
+    private fun mergeSameRowFragments(lines: List<OcrLine>): List<OcrLine> {
+        val positioned = lines.filter { it.text.isNotBlank() && it.boundingBox != null }
+        val unpositioned = lines.filter { it.text.isNotBlank() && it.boundingBox == null }
+        if (positioned.isEmpty()) return unpositioned
+
+        val rows = mutableListOf<MutableList<OcrLine>>()
+        positioned
+            .sortedWith(
+                compareBy<OcrLine> { it.boundingBox?.top ?: Int.MAX_VALUE }
+                    .thenBy { it.boundingBox?.left ?: Int.MAX_VALUE },
+            )
+            .forEach { line ->
+                val row = rows.firstOrNull { existing ->
+                    existing.any { sameVisualRow(it, line) }
+                }
+                if (row == null) rows += mutableListOf(line) else row += line
+            }
+
+        val merged = rows.map { row ->
+            val fragments = row.sortedBy { it.boundingBox?.left ?: Int.MAX_VALUE }
+            val boxes = fragments.mapNotNull(OcrLine::boundingBox)
+            OcrLine(
+                text = fragments.joinToString(" ") { it.text.trim() },
+                boundingBox = OcrBoundingBox(
+                    left = boxes.minOf(OcrBoundingBox::left),
+                    top = boxes.minOf(OcrBoundingBox::top),
+                    right = boxes.maxOf(OcrBoundingBox::right),
+                    bottom = boxes.maxOf(OcrBoundingBox::bottom),
+                ),
+            )
+        }
+        return (merged + unpositioned).sortedWith(
+            compareBy<OcrLine> { it.boundingBox?.top ?: Int.MAX_VALUE }
+                .thenBy { it.boundingBox?.left ?: Int.MAX_VALUE },
+        )
+    }
+
+    private fun sameVisualRow(first: OcrLine, second: OcrLine): Boolean {
+        val firstBox = first.boundingBox ?: return false
+        val secondBox = second.boundingBox ?: return false
+        val overlap = minOf(firstBox.bottom, secondBox.bottom) -
+            maxOf(firstBox.top, secondBox.top)
+        val smallerHeight = minOf(
+            firstBox.bottom - firstBox.top,
+            secondBox.bottom - secondBox.top,
+        ).coerceAtLeast(1)
+        return overlap > 0 && overlap.toDouble() / smallerHeight >= MINIMUM_ROW_OVERLAP
     }
 
     fun parsePackSize(text: String): ParsedPackSize? {
@@ -310,6 +364,7 @@ class RuleBasedReceiptExtractor(
     companion object {
         private const val MILLILITRES_PER_UK_PINT = 568.0
         private const val MINIMUM_SUGGESTION_CONFIDENCE = 0.40
+        private const val MINIMUM_ROW_OVERLAP = 0.35
 
         /**
          * Group 1 is the entire numeric price (including optional £/minus), group 2 is a trailing

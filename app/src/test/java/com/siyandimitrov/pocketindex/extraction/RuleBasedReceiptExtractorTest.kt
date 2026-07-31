@@ -188,6 +188,32 @@ class RuleBasedReceiptExtractorTest {
         assertPack("YOGHURT 2 x 500g", 1_000.0, BaseUnit.MASS_G)
     }
 
+    @Test
+    fun `reassembles right aligned prices split into separate OCR fragments`() = runBlocking {
+        val lines = listOf(
+            OcrLine("SHOP", OcrBoundingBox(20, 10, 100, 35)),
+            OcrLine("WHOLE MILK 2PT", OcrBoundingBox(20, 100, 230, 130)),
+            OcrLine("1.70", OcrBoundingBox(500, 96, 565, 124)),
+            OcrLine("SUBTOTAL", OcrBoundingBox(20, 180, 150, 210)),
+            OcrLine("1.70", OcrBoundingBox(500, 176, 565, 204)),
+            OcrLine("TOTAL", OcrBoundingBox(20, 240, 100, 270)),
+            OcrLine("1.70", OcrBoundingBox(500, 236, 565, 264)),
+        )
+
+        val result = extractor.extract(
+            OcrResult(
+                text = lines.joinToString("\n") { it.text },
+                lines = lines,
+            ),
+            emptyList(),
+        )
+
+        assertEquals("WHOLE MILK 2PT 1.70", result.lineItems.single().rawText)
+        assertEquals(170, result.lineItems.single().lineTotalMinor)
+        assertEquals(ReceiptTotals(170, null, 170), result.totals)
+        assertTrue(result.validation.isValid)
+    }
+
     private fun assertPack(text: String, amount: Double, unit: BaseUnit) {
         val pack = assertNotNull(extractor.parsePackSize(text))
         assertEquals(amount, pack.amount)

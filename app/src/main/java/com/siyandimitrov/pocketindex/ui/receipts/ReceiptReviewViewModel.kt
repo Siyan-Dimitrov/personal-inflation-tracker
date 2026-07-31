@@ -722,5 +722,8 @@ private fun String.isSignedMoneyInput(): Boolean =
 private fun Double.toInputString(): String =
     if (this % 1.0 == 0.0) toLong().toString() else toString()
 
-private fun Long.toMoneyInput(): String =
-    "${this / 100}.${(this % 100).toString().padStart(2, '0')}"
+internal fun Long.toMoneyInput(): String {
+    val sign = if (this < 0) "-" else ""
+    val magnitude = if (this < 0) -this else this
+    return "$sign${magnitude / 100}.${(magnitude % 100).toString().padStart(2, '0')}"
+}
