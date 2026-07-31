@@ -92,7 +92,12 @@ class OverviewViewModel @Inject constructor(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        // The cached dashboard is dropped once nothing observes it, so a reset performed on
+        // another tab cannot flash the old headline and chart when this screen resumes.
+        started = SharingStarted.WhileSubscribed(
+            stopTimeoutMillis = 5_000,
+            replayExpirationMillis = 0,
+        ),
         initialValue = OverviewUiState.Loading,
     )
 

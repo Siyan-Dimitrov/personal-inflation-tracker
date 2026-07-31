@@ -5,6 +5,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.siyandimitrov.pocketindex.data.demo.DemoDataSeeder
 import com.siyandimitrov.pocketindex.data.local.ReceiptStatus
+import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
 import com.siyandimitrov.pocketindex.data.repository.ReceiptRepository
 import com.siyandimitrov.pocketindex.extraction.ReceiptExtractionScheduler
 import dagger.hilt.android.HiltAndroidApp
@@ -29,6 +30,9 @@ class PocketIndexApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var extractionScheduler: ReceiptExtractionScheduler
 
+    @Inject
+    lateinit var preferences: InflationPreferences
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val workManagerConfiguration: Configuration
@@ -40,7 +44,9 @@ class PocketIndexApplication : Application(), Configuration.Provider {
         super.onCreate()
         if (BuildConfig.DEBUG) {
             applicationScope.launch {
-                demoDataSeeder.seedIfEmpty()
+                if (!preferences.isDemoSeedBlocked) {
+                    demoDataSeeder.seedIfEmpty()
+                }
             }
         }
         applicationScope.launch {

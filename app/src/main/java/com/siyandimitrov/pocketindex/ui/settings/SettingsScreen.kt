@@ -51,7 +51,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.siyandimitrov.pocketindex.BuildConfig
 import com.siyandimitrov.pocketindex.data.local.RecurringCadence
 
 private data class RecurringBill(
@@ -148,18 +147,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     if (showResetConfirmation) {
         AlertDialog(
             onDismissRequest = { showResetConfirmation = false },
-            title = {
-                Text(if (BuildConfig.DEBUG) "Restore demo data?" else "Reset all data?")
-            },
+            title = { Text("Reset all data?") },
             text = {
                 Text(
-                    if (BuildConfig.DEBUG) {
-                        "This deletes your receipts, price edits, bills, and settings, then " +
-                            "restores the original demo history. This cannot be undone."
-                    } else {
-                        "This permanently deletes every receipt, product, price observation, " +
-                            "bill, and setting stored on this device. This cannot be undone."
-                    },
+                    "This permanently deletes every receipt, product, price observation, " +
+                        "bill, and setting stored on this device, including your index and " +
+                        "charts. This cannot be undone.",
                 )
             },
             confirmButton = {
@@ -170,10 +163,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     },
                     enabled = !dataState.isResetting,
                 ) {
-                    Text(
-                        if (BuildConfig.DEBUG) "Restore" else "Reset",
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    Text("Reset", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -370,7 +360,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         Icon(Icons.Rounded.RestartAlt, contentDescription = null)
                     }
                     Text(
-                        text = if (BuildConfig.DEBUG) "  Restore demo data" else "  Reset all data",
+                        text = "  Reset all data",
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }

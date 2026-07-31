@@ -53,14 +53,28 @@ class InflationPreferences @Inject constructor(
         preferences.edit().putInt(KEY_CHART_RANGE_MONTHS, months).apply()
     }
 
+    /** True once the user has wiped their data, so debug builds never re-seed demo history. */
+    val isDemoSeedBlocked: Boolean
+        get() = preferences.getBoolean(KEY_DEMO_SEED_BLOCKED, false)
+
+    /** Written synchronously: a reset interrupted by process death must not restore demo data. */
+    fun blockDemoSeed() {
+        preferences.edit().putBoolean(KEY_DEMO_SEED_BLOCKED, true).commit()
+    }
+
+    /** Clears the user-configurable settings only; the demo seed block must survive a reset. */
     fun resetToDefaults() {
-        preferences.edit().clear().apply()
+        preferences.edit()
+            .remove(KEY_BASE_WINDOW_DAYS)
+            .remove(KEY_CHART_RANGE_MONTHS)
+            .apply()
     }
 
     private companion object {
         const val FILE_NAME = "inflation_preferences"
         const val KEY_BASE_WINDOW_DAYS = "base_window_days"
         const val KEY_CHART_RANGE_MONTHS = "chart_range_months"
+        const val KEY_DEMO_SEED_BLOCKED = "demo_seed_blocked"
         const val DEFAULT_CHART_RANGE_MONTHS = 6
         const val MIN_BASE_WINDOW_DAYS = 14L
         const val MAX_BASE_WINDOW_DAYS = 182L
