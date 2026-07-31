@@ -1,6 +1,7 @@
 package com.siyandimitrov.pocketindex.ui.overview
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -89,14 +91,18 @@ fun OverviewScreen(
 
         when (val currentState = state) {
             OverviewUiState.Loading -> item { LoadingCard() }
-            is OverviewUiState.Empty -> item {
-                MessageCard(
-                    title = currentState.title,
-                    explanation = currentState.explanation,
-                )
+            is OverviewUiState.Empty -> {
+                item {
+                    MessageCard(
+                        title = currentState.title,
+                        explanation = currentState.explanation,
+                    )
+                }
+                item { IndexChart(emptyList()) }
             }
-            is OverviewUiState.BuildingBaseBasket -> item {
-                BuildingCard(currentState)
+            is OverviewUiState.BuildingBaseBasket -> {
+                item { BuildingCard(currentState) }
+                item { IndexChart(emptyList()) }
             }
             is OverviewUiState.Error -> item {
                 MessageCard(
@@ -254,24 +260,70 @@ private fun ChartRangeSelector(
     }
 }
 
+/**
+ * The card stays on screen with an empty baseline until a second monthly point exists, so a
+ * reset zeroes the chart instead of removing it.
+ */
 @Composable
 private fun IndexChart(visible: List<IndexPoint>) {
-    if (visible.size < 2) {
-        MessageCard(
-            title = "Monthly chart is building",
-            explanation = "The first point is ready. Another point will appear as time and prices accumulate.",
-        )
-        return
-    }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = "Fixed-basket index",
             style = MaterialTheme.typography.titleMedium,
         )
-        MiniLineChart(
-            values = visible.map { it.index.toFloat() },
-            labels = visible.chartLabels(),
-            modifier = Modifier.fillMaxWidth(),
+        if (visible.size >= 2) {
+            MiniLineChart(
+                values = visible.map { it.index.toFloat() },
+                labels = visible.chartLabels(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            EmptyIndexChart(hasFirstPoint = visible.isNotEmpty())
+        }
+    }
+}
+
+@Composable
+private fun EmptyIndexChart(hasFirstPoint: Boolean) {
+    val baselineColor = MaterialTheme.colorScheme.outline
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(158.dp),
+            contentAlignment = Alignment.BottomStart,
+        ) {
+            Canvas(Modifier.fillMaxSize()) {
+                repeat(GRID_ROWS) { row ->
+                    drawLine(
+                        color = baselineColor.copy(alpha = 0.35f),
+                        start = Offset(0f, size.height * row / GRID_ROWS),
+                        end = Offset(size.width, size.height * row / GRID_ROWS),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+                drawLine(
+                    color = baselineColor,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = 2.dp.toPx(),
+                )
+            }
+            Text(
+                text = "0",
+                modifier = Modifier.padding(bottom = 6.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            text = if (hasFirstPoint) {
+                "The first point is ready. The line appears once a second monthly point exists."
+            } else {
+                "No monthly points yet. Scan a receipt or add a bill to start the series."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -638,3 +690,5 @@ private fun EpochDay.format(pattern: String): String =
     SimpleDateFormat(pattern, Locale.UK).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }.format(Date(Math.multiplyExact(value, 86_400_000L)))
+
+private const val GRID_ROWS = 4

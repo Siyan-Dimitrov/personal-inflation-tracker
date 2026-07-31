@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
 import androidx.work.await
+import com.siyandimitrov.pocketindex.data.local.LocalDataLock
 import com.siyandimitrov.pocketindex.data.local.PocketIndexDatabase
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,6 +32,7 @@ class DataSettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val database: PocketIndexDatabase,
     private val preferences: InflationPreferences,
+    private val localDataLock: LocalDataLock,
 ) : ViewModel() {
     private val mutableUiState = MutableStateFlow(DataSettingsUiState())
     val uiState: StateFlow<DataSettingsUiState> = mutableUiState.asStateFlow()
@@ -45,21 +47,23 @@ class DataSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    // Blocked first, and durably: if any later step fails or the process dies,
-                    // the next debug launch must still not restore the demo history.
-                    preferences.blockDemoSeed()
-                    // Cancelled before the wipe: a running extraction would otherwise write its
-                    // rows back afterwards and leave orphaned products behind.
+                    // Cancelled before the lock is taken so an extraction still running its OCR
+                    // stops at its next suspension point instead of making the user wait.
                     WorkManager.getInstance(context).cancelAllWork().await()
-                    database.clearAllTables()
-                    File(context.filesDir, RECEIPT_DIRECTORY).let { directory ->
-                        check(!directory.exists() || directory.deleteRecursively()) {
-                            "The private receipt images could not be removed."
+                    localDataLock.withLock {
+                        // Blocked first, and durably: if any later step fails or the process
+                        // dies, the next debug launch must still not restore the demo history.
+                        preferences.blockDemoSeed()
+                        database.clearAllTables()
+                        File(context.filesDir, RECEIPT_DIRECTORY).let { directory ->
+                            check(!directory.exists() || directory.deleteRecursively()) {
+                                "The private receipt images could not be removed."
+                            }
                         }
+                        // The scanner leaves a full-resolution copy of every page in the cache.
+                        context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+                        preferences.resetToDefaults()
                     }
-                    // The scanner leaves a full-resolution copy of every page in the cache.
-                    context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-                    preferences.resetToDefaults()
                 }
             }.onSuccess {
                 mutableUiState.value = DataSettingsUiState(message = "All local data reset.")

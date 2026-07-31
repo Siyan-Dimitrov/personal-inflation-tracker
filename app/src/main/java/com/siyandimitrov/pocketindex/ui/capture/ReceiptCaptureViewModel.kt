@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.siyandimitrov.pocketindex.data.local.LocalDataLock
 import com.siyandimitrov.pocketindex.data.repository.NewReceipt
 import com.siyandimitrov.pocketindex.data.repository.ReceiptRepository
 import com.siyandimitrov.pocketindex.extraction.ReceiptExtractionScheduler
@@ -34,6 +35,7 @@ class ReceiptCaptureViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val receiptRepository: ReceiptRepository,
     private val extractionScheduler: ReceiptExtractionScheduler,
+    private val localDataLock: LocalDataLock,
 ) : ViewModel() {
     private val mutableUiState = MutableStateFlow(ReceiptCaptureUiState())
     val uiState: StateFlow<ReceiptCaptureUiState> = mutableUiState.asStateFlow()
@@ -72,7 +74,11 @@ class ReceiptCaptureViewModel @Inject constructor(
         mutableUiState.update { it.copy(completedReceiptId = null, message = null) }
     }
 
-    private suspend fun processScanInternal(sourceUri: Uri): Long {
+    /**
+     * Held under [LocalDataLock] as one unit: a data reset landing between the image copy, the
+     * receipt row, and the extraction job would otherwise survive the wipe.
+     */
+    private suspend fun processScanInternal(sourceUri: Uri): Long = localDataLock.withLock {
         val savedFile = savePrivateCopy(sourceUri)
         val purchasedAt = SimpleDateFormat("yyyy-MM-dd", Locale.UK).format(Date())
         val receiptId = receiptRepository.createPendingReceipt(
@@ -82,7 +88,7 @@ class ReceiptCaptureViewModel @Inject constructor(
             ),
         )
         extractionScheduler.enqueue(receiptId)
-        return receiptId
+        receiptId
     }
 
     private fun savePrivateCopy(sourceUri: Uri): File {

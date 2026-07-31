@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.Operation
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.siyandimitrov.pocketindex.data.local.LocalDataLock
 import com.siyandimitrov.pocketindex.data.local.PocketIndexDatabase
 import com.siyandimitrov.pocketindex.data.local.ReceiptStatus
 import com.siyandimitrov.pocketindex.data.local.UnitType
@@ -42,6 +43,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParameters: WorkerParameters,
     private val database: PocketIndexDatabase,
+    private val localDataLock: LocalDataLock,
     private val receiptRepository: ReceiptRepository,
     private val catalogRepository: CatalogRepository,
     private val ocrService: ReceiptOcrService,
@@ -84,9 +86,6 @@ class ReceiptExtractionWorker @AssistedInject constructor(
                 ?.trim()
                 ?.take(MAX_MERCHANT_LENGTH)
                 ?.takeIf(String::isNotBlank)
-            val merchantId = merchantName?.let { name ->
-                catalogRepository.getOrCreateMerchant(name)
-            }
             val lineItems = extraction.lineItems.map { item ->
                 ExtractedLineItem(
                     rawText = item.rawText,
@@ -98,18 +97,29 @@ class ReceiptExtractionWorker @AssistedInject constructor(
                 )
             }
             val calculatedTotal = lineItems.sumOf(ExtractedLineItem::lineTotalMinor)
-            receiptRepository.saveExtraction(
-                receiptId = receiptId,
-                extraction = ReceiptExtraction(
-                    merchantId = merchantId,
-                    subtotalMinor = extraction.totals.subtotalMinor?.toLong(),
-                    taxMinor = extraction.totals.taxMinor?.toLong(),
-                    totalMinor = extraction.totals.totalMinor?.toLong() ?: calculatedTotal,
-                    ocrText = extraction.rawOcrText,
-                    status = ReceiptStatus.NEEDS_REVIEW,
-                    lineItems = lineItems,
-                ),
-            )
+            // The merchant is created in its own transaction, so both writes are held under the
+            // lock and re-check the receipt: a data reset during OCR must not leave a merchant
+            // behind for a receipt that no longer exists.
+            localDataLock.withLock {
+                checkNotNull(database.receiptDao().getById(receiptId)) {
+                    "Receipt $receiptId no longer exists."
+                }
+                val merchantId = merchantName?.let { name ->
+                    catalogRepository.getOrCreateMerchant(name)
+                }
+                receiptRepository.saveExtraction(
+                    receiptId = receiptId,
+                    extraction = ReceiptExtraction(
+                        merchantId = merchantId,
+                        subtotalMinor = extraction.totals.subtotalMinor?.toLong(),
+                        taxMinor = extraction.totals.taxMinor?.toLong(),
+                        totalMinor = extraction.totals.totalMinor?.toLong() ?: calculatedTotal,
+                        ocrText = extraction.rawOcrText,
+                        status = ReceiptStatus.NEEDS_REVIEW,
+                        lineItems = lineItems,
+                    ),
+                )
+            }
             Result.success(resultData(receiptId))
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
