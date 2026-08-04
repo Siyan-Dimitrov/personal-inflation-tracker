@@ -15,6 +15,7 @@ import com.siyandimitrov.pocketindex.data.repository.NewObservation
 import com.siyandimitrov.pocketindex.data.repository.ObservationRepository
 import com.siyandimitrov.pocketindex.data.repository.ReceiptCorrection
 import com.siyandimitrov.pocketindex.data.repository.ReceiptRepository
+import com.siyandimitrov.pocketindex.extraction.isPromotionLine
 import com.siyandimitrov.pocketindex.extraction.parseReceiptPackSize
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.ParsePosition
@@ -265,7 +266,7 @@ class ReceiptReviewViewModel @Inject constructor(
                     unitType = selectedProduct?.unitType,
                     confidence = if (edit?.wasUserMatched == true) 1.0 else item.matchConfidence,
                     wasUserMatched = edit?.wasUserMatched == true,
-                    excluded = edit?.excluded == true,
+                    excluded = edit?.excluded ?: isNonProductLine(item.rawText, item.lineTotalMinor),
                 )
             }
             val subtotalInput = header?.subtotalInput
@@ -681,6 +682,16 @@ class ReceiptReviewViewModel @Inject constructor(
         transient.update { it.copy(message = message) }
     }
 }
+
+/**
+ * Lines a receipt prints as adjustments rather than purchases start out excluded from the index.
+ *
+ * A coupon, price cut or refund still has to be reviewed, because its signed amount is needed to
+ * reproduce the printed total, but it has no shelf price to observe. The user can still tick it
+ * back in, and choosing a product for the line clears the exclusion.
+ */
+internal fun isNonProductLine(rawText: String, lineTotalMinor: Long): Boolean =
+    lineTotalMinor < 0L || isPromotionLine(rawText)
 
 internal fun String.toReceiptNumber(): Double? =
     replace(',', '.').toDoubleOrNull()?.takeIf(Double::isFinite)

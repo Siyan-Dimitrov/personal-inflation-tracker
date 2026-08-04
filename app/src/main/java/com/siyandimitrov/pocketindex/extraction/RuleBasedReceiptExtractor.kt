@@ -142,7 +142,7 @@ class RuleBasedReceiptExtractor(
         if (shouldIgnore(rawText)) return null
         val amountMatches = moneyRegex.findAll(rawText).toList()
         val finalAmount = amountMatches.lastOrNull()?.takeIf { match ->
-            rawText.substring(match.range.last + 1).isBlank()
+            rawText.substring(match.range.last + 1).isFinalColumnSuffix()
         } ?: return null
 
         val lineTotalMinor = finalAmount.toMinor() ?: return null
@@ -165,7 +165,14 @@ class RuleBasedReceiptExtractor(
         description = stripPurchaseQuantity(description).trim(' ', '-', ':')
         if (description.isBlank() || description.none(Char::isLetter)) return null
 
-        val rankedMatch = matcher.rank(description, candidates, limit = 1).firstOrNull()
+        // A coupon or price cut is an adjustment to another line, so it is never worth matching to
+        // a product. Its signed amount is still needed to reproduce the printed total.
+        val isPromotion = isPromotionLine(rawText)
+        val rankedMatch = if (isPromotion) {
+            null
+        } else {
+            matcher.rank(description, candidates, limit = 1).firstOrNull()
+        }
         val acceptedMatch = rankedMatch?.takeIf { it.confidence >= MINIMUM_SUGGESTION_CONFIDENCE }
         val matchedCandidate = acceptedMatch?.let { match ->
             candidates.firstOrNull { it.id == match.productId }
@@ -191,10 +198,13 @@ class RuleBasedReceiptExtractor(
             ) {
                 add(LineItemIssue.AMBIGUOUS_PRICE)
             }
-            if (acceptedMatch == null) {
-                add(LineItemIssue.NO_PRODUCT_MATCH)
-            } else if (acceptedMatch.confidence < FuzzyProductMatcher.REVIEW_CONFIDENCE) {
-                add(LineItemIssue.LOW_CONFIDENCE_MATCH)
+            // A promotional line needs no product, so its absence is not a review issue.
+            if (!isPromotion) {
+                if (acceptedMatch == null) {
+                    add(LineItemIssue.NO_PRODUCT_MATCH)
+                } else if (acceptedMatch.confidence < FuzzyProductMatcher.REVIEW_CONFIDENCE) {
+                    add(LineItemIssue.LOW_CONFIDENCE_MATCH)
+                }
             }
             if (parsedPack == null && inheritedPack != null) {
                 add(LineItemIssue.MISSING_PACK_SIZE)
@@ -262,7 +272,7 @@ class RuleBasedReceiptExtractor(
     private fun classifyTotal(text: String): ClassifiedTotal? {
         val trimmed = text.trim()
         val amount = moneyRegex.findAll(trimmed).lastOrNull()
-            ?.takeIf { trimmed.substring(it.range.last + 1).isBlank() }
+            ?.takeIf { trimmed.substring(it.range.last + 1).isFinalColumnSuffix() }
             ?.toMinor()
             ?: return null
         val label = trimmed.substringBeforeLastMoney().uppercase()
@@ -321,8 +331,17 @@ class RuleBasedReceiptExtractor(
         return trimmed.isEmpty() ||
             headingRegex.matches(trimmed) ||
             ignoredLineRegex.containsMatchIn(trimmed) ||
-            dateOrTimeRegex.containsMatchIn(trimmed)
+            dateOrTimeRegex.containsMatchIn(trimmed) ||
+            vatBreakdownRegex.containsMatchIn(trimmed) ||
+            discountSummaryRegex.containsMatchIn(trimmed)
     }
+
+    /**
+     * UK receipts often print a VAT class letter after the final price column, so the amount is
+     * still the last column even though the line does not end with it.
+     */
+    private fun String.isFinalColumnSuffix(): Boolean =
+        isBlank() || vatClassSuffixRegex.matches(this)
 
     private fun MatchResult.toMinor(): Int? {
         val numeric = groupValues[1].replace("£", "").replace(" ", "")
@@ -385,20 +404,31 @@ class RuleBasedReceiptExtractor(
             Regex("""^\s*(?:ITEM|DESCRIPTION)?\s*(?:QTY|QUANTITY)?\s*(?:PRICE|AMOUNT|TOTAL)?\s*$""", RegexOption.IGNORE_CASE)
         private val ignoredLineRegex =
             Regex(
-                """\b(?:CASH|CARD|VISA|MASTERCARD|MAESTRO|AMEX|TENDER|CHANGE|BALANCE|AUTH|AID|CONTACTLESS|PAYMENT|RECEIPT\s*(?:NO|NUMBER)|TEL|TELEPHONE)\b""",
+                """\b(?:CASH|CARD|VISA|MASTERCARD|MAESTRO|AMEX|TENDER|CHANGE|BALANCE|AUTH|AID|CONTACTLESS|PAYMENT|AMOUNT|RECEIPT\s*(?:NO|NUMBER)|TEL|TELEPHONE)\b""",
                 RegexOption.IGNORE_CASE,
             )
+        /** The per-rate VAT breakdown, for example "B 20 % 10.60 1.77", is not a purchase. */
+        private val vatBreakdownRegex = Regex("""^[A-Z]\s+\d{1,2}(?:[.,]\d+)?\s*%""")
+        /** A savings summary restates discounts already printed against their own lines. */
+        private val discountSummaryRegex = Regex(
+            """\b(?:TOTAL\s+(?:DISCOUNT|SAVINGS?)|(?:DISCOUNT|SAVINGS?)\s+TOTAL|YOU\s+SAVED)\b""",
+            RegexOption.IGNORE_CASE,
+        )
+        private val vatClassSuffixRegex = Regex("""\s*[A-Z]\*?\s*""")
         private val dateOrTimeRegex = Regex(
             """(?:\b\d{1,2}[/:.-]\d{1,2}[/:.-]\d{2,4}\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)""",
         )
         private val leadingQuantityRegex =
             Regex("""^\s*(\d+(?:[.,]\d+)?)\s*[xX×]\s*""")
-        private val atQuantityRegex =
-            Regex("""\b(\d+(?:[.,]\d+)?)\s*@\s*(?:£\s*)?\d+[.,]\d{2}\b""", RegexOption.IGNORE_CASE)
+        /** Matches a mid-line purchase quantity such as "5 @ £2.49" or Lidl's "5 x £2.49". */
+        private val atQuantityRegex = Regex(
+            """\b(\d+(?:[.,]\d+)?)\s*[@xX×]\s*(?:£\s*)?\d+[.,]\d{2}\b""",
+            RegexOption.IGNORE_CASE,
+        )
         private val qtyLabelRegex =
             Regex("""\bQTY\s*[:=]?\s*(\d+(?:[.,]\d+)?)\b""", RegexOption.IGNORE_CASE)
         private val danglingAtQuantityRegex =
-            Regex("""\b\d+(?:[.,]\d+)?\s*@\s*$""", RegexOption.IGNORE_CASE)
+            Regex("""\b\d+(?:[.,]\d+)?\s*[@xX×]\s*$""", RegexOption.IGNORE_CASE)
         private val startsWithMeasuredPack =
             Regex("""^\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|ltr|litre|litres|pt|pint|pints)\b""", RegexOption.IGNORE_CASE)
         private val multiPackRegex =
@@ -426,6 +456,20 @@ class RuleBasedReceiptExtractor(
  */
 fun parseReceiptPackSize(text: String): ParsedPackSize? =
     PackSizeParserHolder.parser.parsePackSize(text)
+
+private val promotionLineRegex = Regex(
+    """\b(?:COUPON|VOUCHER|PROMO(?:TION)?|DISCOUNT|SAVINGS?|SAVED|PRICE\s*CUT|MULTI\s*BUY|BOGOF|LOYALTY|OFFER)\b|\d+(?:[.,]\d+)?\s*%\s*OFF""",
+    RegexOption.IGNORE_CASE,
+)
+
+/**
+ * Reports whether a receipt line is a coupon, price cut or other promotional adjustment.
+ *
+ * Such a line is kept as evidence because its signed amount is part of the printed total, but it
+ * never describes a purchasable product, so the review screen excludes it from the index by
+ * default. Both the parser and the review layer read the same preserved raw text.
+ */
+fun isPromotionLine(text: String): Boolean = promotionLineRegex.containsMatchIn(text)
 
 private object PackSizeParserHolder {
     val parser = RuleBasedReceiptExtractor()

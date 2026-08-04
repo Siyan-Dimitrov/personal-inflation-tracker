@@ -567,7 +567,7 @@ private fun LiveReviewItemCard(
                 Column {
                     Text("Exclude this line", style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        "Use for totals, headings, bags, or other non-product text.",
+                        "Use for coupons, discounts, totals, bags, or other non-product text.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
