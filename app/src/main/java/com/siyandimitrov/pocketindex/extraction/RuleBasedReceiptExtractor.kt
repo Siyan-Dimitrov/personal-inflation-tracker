@@ -328,9 +328,11 @@ class RuleBasedReceiptExtractor(
 
     private fun shouldIgnore(text: String): Boolean {
         val trimmed = text.trim()
+        // A price cut can mention a payment word without being a payment line, such as
+        // Morrisons' "More Card Price", so the promotion check wins over the ignore list.
         return trimmed.isEmpty() ||
             headingRegex.matches(trimmed) ||
-            ignoredLineRegex.containsMatchIn(trimmed) ||
+            (ignoredLineRegex.containsMatchIn(trimmed) && !isPromotionLine(trimmed)) ||
             dateOrTimeRegex.containsMatchIn(trimmed) ||
             vatBreakdownRegex.containsMatchIn(trimmed) ||
             discountSummaryRegex.containsMatchIn(trimmed)
@@ -397,7 +399,10 @@ class RuleBasedReceiptExtractor(
         private val taxLabel =
             Regex("""\b(?:VAT|TAX)\b""", RegexOption.IGNORE_CASE)
         private val totalLabel =
-            Regex("""\b(?:GRAND\s+TOTAL|TOTAL|AMOUNT\s+DUE)\b""", RegexOption.IGNORE_CASE)
+            Regex(
+                """\b(?:GRAND\s+TOTAL|TOTAL|AMOUNT\s+DUE|BALANCE\s+DUE)\b""",
+                RegexOption.IGNORE_CASE,
+            )
         private val nonTotalLabel =
             Regex("""\b(?:SAVINGS?|DISCOUNT|ITEMS?)\b""", RegexOption.IGNORE_CASE)
         private val headingRegex =
@@ -411,7 +416,7 @@ class RuleBasedReceiptExtractor(
         private val vatBreakdownRegex = Regex("""^[A-Z]\s+\d{1,2}(?:[.,]\d+)?\s*%""")
         /** A savings summary restates discounts already printed against their own lines. */
         private val discountSummaryRegex = Regex(
-            """\b(?:TOTAL\s+(?:DISCOUNT|SAVINGS?)|(?:DISCOUNT|SAVINGS?)\s+TOTAL|YOU\s+SAVED)\b""",
+            """\b(?:TOTAL\s+(?:DISCOUNT|SAVINGS?)|(?:DISCOUNT|SAVINGS?)\s+TOTAL|YOU\s+SAVED|(?:CLUBCARD|NECTAR|MORE\s+CARD)\s+SAVINGS?|SAVINGS?\s+WITH)\b""",
             RegexOption.IGNORE_CASE,
         )
         private val vatClassSuffixRegex = Regex("""\s*[A-Z]\*?\s*""")
@@ -457,8 +462,9 @@ class RuleBasedReceiptExtractor(
 fun parseReceiptPackSize(text: String): ParsedPackSize? =
     PackSizeParserHolder.parser.parsePackSize(text)
 
+// Named UK loyalty schemes print price cuts without any generic promotion word.
 private val promotionLineRegex = Regex(
-    """\b(?:COUPON|VOUCHER|PROMO(?:TION)?|DISCOUNT|SAVINGS?|SAVED|PRICE\s*CUT|MULTI\s*BUY|BOGOF|LOYALTY|OFFER)\b|\d+(?:[.,]\d+)?\s*%\s*OFF""",
+    """\b(?:COUPON|VOUCHER|PROMO(?:TION)?|DISCOUNT|SAVINGS?|SAVED|PRICE\s*CUT|MULTI\s*BUY|BOGOF|LOYALTY|OFFER|CLUBCARD|NECTAR|MORE\s+CARD)\b|\d+(?:[.,]\d+)?\s*%\s*OFF""",
     RegexOption.IGNORE_CASE,
 )
 

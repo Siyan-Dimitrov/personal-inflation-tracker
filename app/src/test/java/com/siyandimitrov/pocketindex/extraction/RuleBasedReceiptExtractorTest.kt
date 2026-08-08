@@ -186,6 +186,108 @@ class RuleBasedReceiptExtractorTest {
     }
 
     @Test
+    fun `reads a Tesco receipt with Clubcard price cuts and weighted produce`() = runBlocking {
+        val result = extractor.extract(
+            ocrResult(
+                "TESCO",
+                "CRAVENDALE WHOLE MILK 2L 2.85",
+                "Clubcard Price -0.55",
+                "BANANAS LOOSE",
+                "0.912 kg @ £0.90/kg 0.82",
+                "TOTAL 3.12",
+                "CARD 3.12",
+                "CLUBCARD SAVINGS 0.55",
+            ),
+            emptyList(),
+        )
+
+        assertEquals("TESCO", result.merchantName)
+        assertEquals(312, result.totals.totalMinor)
+        // The savings summary is dropped; the per-line Clubcard cut is kept as evidence.
+        assertEquals(listOf(285, -55, 82), result.lineItems.map { it.lineTotalMinor })
+        assertEquals(312, result.validation.calculatedLineItemsMinor)
+        // The Clubcard cut is a promotion, so it carries no product-match review noise.
+        assertTrue(result.lineItems[1].issues.isEmpty())
+        // Weighted produce is not yet understood: the amount survives for reconciliation but
+        // the description degrades to the weight fragment and the line asks for review.
+        assertTrue(LineItemIssue.AMBIGUOUS_PRICE in result.lineItems[2].issues)
+    }
+
+    @Test
+    fun `reads a Sainsburys receipt whose total is labelled balance due`() = runBlocking {
+        val result = extractor.extract(
+            ocrResult(
+                "SAINSBURY'S",
+                "JS SEMI SKIMMED MILK 2.27L 1.65",
+                "JS OLIVE SPREAD 500G 1.75",
+                "Nectar Price Saving -0.30",
+                "6 BALANCE DUE 3.10",
+                "VISA 3.10",
+            ),
+            emptyList(),
+        )
+
+        assertEquals("SAINSBURY'S", result.merchantName)
+        assertEquals(310, result.totals.totalMinor)
+        assertEquals(listOf(165, 175, -30), result.lineItems.map { it.lineTotalMinor })
+        assertEquals(310, result.validation.calculatedLineItemsMinor)
+        assertTrue(result.lineItems[2].issues.isEmpty())
+        // "2.27" in the pack size reads as a price column, so the line asks for review.
+        assertTrue(LineItemIssue.AMBIGUOUS_PRICE in result.lineItems[0].issues)
+    }
+
+    @Test
+    fun `reads a Morrisons receipt with More Card price cuts`() = runBlocking {
+        val result = extractor.extract(
+            ocrResult(
+                "MORRISONS",
+                "BUTTER UNSALTED 250G 1.99",
+                "More Card Price -0.40",
+                "TOTAL TO PAY 1.59",
+                "SAVINGS WITH YOUR MORE CARD 0.40",
+            ),
+            emptyList(),
+        )
+
+        assertEquals("MORRISONS", result.merchantName)
+        assertEquals(159, result.totals.totalMinor)
+        // "More Card Price" mentions a payment word but is a price cut, not a payment line.
+        assertEquals(listOf(199, -40), result.lineItems.map { it.lineTotalMinor })
+        assertEquals(159, result.validation.calculatedLineItemsMinor)
+        assertTrue(result.lineItems[1].issues.isEmpty())
+    }
+
+    @Test
+    fun `reads a Costco receipt with item codes and VAT added after the subtotal`() = runBlocking {
+        val result = extractor.extract(
+            ocrResult(
+                "COSTCO WHOLESALE",
+                "Member 111222333444",
+                "96716 KS OLIVE OIL 2L 8.99 E",
+                "133774 ORGANIC EGGS 24 3.49 Z",
+                "294721 / 96716 TPD 1.50-",
+                "SUBTOTAL 10.98",
+                "VAT 1.80",
+                "**** TOTAL 12.78",
+                "ITEMS SOLD 3",
+            ),
+            emptyList(),
+        )
+
+        assertEquals("COSTCO WHOLESALE", result.merchantName)
+        assertEquals(ReceiptTotals(1_098, 180, 1_278), result.totals)
+        assertEquals(listOf(899, 349, -150), result.lineItems.map { it.lineTotalMinor })
+        // Costco prints ex-VAT prices, so subtotal plus VAT reconciles against the total.
+        assertTrue(result.validation.isValid)
+        // Leading item codes stay in the description for now, which weakens product matching.
+        assertEquals("96716 KS OLIVE OIL 2L", result.lineItems[0].description)
+        assertEquals(2_000.0, result.lineItems[0].packSize?.amount)
+        // The TPD markdown code is not yet recognised as a promotion, so it asks for review;
+        // its negative amount still keeps it out of the index by default.
+        assertTrue(LineItemIssue.NO_PRODUCT_MATCH in result.lineItems[2].issues)
+    }
+
+    @Test
     fun `keeps promotional lines as evidence without matching them to products`() = runBlocking {
         val result = extractor.extract(
             ocrResult(
