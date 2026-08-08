@@ -3,6 +3,7 @@ package com.siyandimitrov.pocketindex.ui.receipts
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.siyandimitrov.pocketindex.data.local.LocalDataLock
 import com.siyandimitrov.pocketindex.data.local.PocketIndexDatabase
 import com.siyandimitrov.pocketindex.data.local.PriceObservationEntity
 import com.siyandimitrov.pocketindex.data.local.ReceiptListItem
@@ -13,6 +14,7 @@ import com.siyandimitrov.pocketindex.data.repository.ObservationRepository
 import com.siyandimitrov.pocketindex.data.repository.ReceiptRepository
 import com.siyandimitrov.pocketindex.extraction.ReceiptExtractionScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -111,28 +113,32 @@ data class ReceiptDetailUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val message: String? = null,
+    val isDeleted: Boolean = false,
 )
 
 @HiltViewModel
 class ReceiptDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    receiptRepository: ReceiptRepository,
+    private val receiptRepository: ReceiptRepository,
     catalogRepository: CatalogRepository,
     observationRepository: ObservationRepository,
     private val database: PocketIndexDatabase,
     private val extractionScheduler: ReceiptExtractionScheduler,
+    private val localDataLock: LocalDataLock,
 ) : ViewModel() {
     private val receiptId = checkNotNull(savedStateHandle.get<Long>("receiptId")) {
         "Receipt detail requires a receiptId route argument."
     }
     private val transientMessage = MutableStateFlow<String?>(null)
+    private val deleted = MutableStateFlow(false)
 
     val uiState: StateFlow<ReceiptDetailUiState> = combine(
         receiptRepository.observeReceipt(receiptId),
         catalogRepository.observeProducts(),
         observationRepository.observeAll(),
         transientMessage,
-    ) { details, products, observations, message ->
+        deleted,
+    ) { details, products, observations, message, isDeleted ->
         val lineItemIds = details?.lineItems?.mapTo(hashSetOf()) { it.id }.orEmpty()
         ReceiptDetailUiState(
             details = details,
@@ -143,8 +149,9 @@ class ReceiptDetailViewModel @Inject constructor(
                     ?.let { it to observation }
             }.toMap(),
             isLoading = false,
-            error = if (details == null) "This receipt could not be found." else null,
+            error = if (details == null && !isDeleted) "This receipt could not be found." else null,
             message = message,
+            isDeleted = isDeleted,
         )
     }.catch {
         emit(
@@ -171,6 +178,26 @@ class ReceiptDetailViewModel @Inject constructor(
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 transientMessage.value = "The receipt could not be retried."
+            }
+        }
+    }
+
+    fun deleteReceipt() {
+        viewModelScope.launch {
+            runCatching {
+                extractionScheduler.cancel(receiptId)
+                // Held under the data lock so a delete cannot interleave with a data reset or
+                // with the extraction worker's own locked write for this receipt.
+                localDataLock.withLock {
+                    receiptRepository.deleteReceipt(receiptId)
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { imagePath -> File(imagePath).delete() }
+                }
+            }.onSuccess {
+                deleted.value = true
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                transientMessage.value = "The receipt could not be deleted."
             }
         }
     }

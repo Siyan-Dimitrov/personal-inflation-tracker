@@ -23,9 +23,12 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -37,8 +40,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -294,6 +300,49 @@ fun ReceiptDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val details = state.details
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isDeleted) {
+        if (state.isDeleted) onBack()
+    }
+    if (showDeleteDialog && details != null) {
+        val observationCount = state.observationsByLineItem.size
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete this receipt?") },
+            text = {
+                Text(
+                    buildString {
+                        append("The receipt")
+                        if (details.receipt.imagePath.isNotBlank()) append(", its original image,")
+                        append(" and its line items are removed.")
+                        if (observationCount > 0) {
+                            append(
+                                " The $observationCount price " +
+                                    (if (observationCount == 1) "observation" else "observations") +
+                                    " it created will leave your index.",
+                            )
+                        }
+                        append(" This cannot be undone.")
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteReceipt()
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Keep")
+                }
+            },
+        )
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -437,6 +486,18 @@ fun ReceiptDetailScreen(
                             }
                         }
                         ReceiptStatus.CONFIRMED -> Unit
+                    }
+                }
+                item {
+                    OutlinedButton(
+                        onClick = { showDeleteDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) {
+                        Icon(Icons.Rounded.Delete, contentDescription = null)
+                        Text("Delete receipt")
                     }
                 }
             }

@@ -19,4 +19,12 @@ interface ReceiptRepository {
         correction: ReceiptCorrection,
         items: List<ConfirmedLineItem>,
     )
+
+    /**
+     * Deletes a receipt together with its line items and any price observations they produced.
+     *
+     * Returns the stored image path so the caller can remove the private image file, or null
+     * when the receipt did not exist.
+     */
+    suspend fun deleteReceipt(receiptId: Long): String?
 }

@@ -231,6 +231,15 @@ class DefaultReceiptRepository @Inject constructor(
         }
     }
 
+    override suspend fun deleteReceipt(receiptId: Long): String? = database.withTransaction {
+        val receipt = receipts.getById(receiptId) ?: return@withTransaction null
+        // Deleting a line item only nulls the observation's reference to it, so the
+        // observations must go explicitly or an accidental scan keeps feeding the index.
+        observations.deleteForReceipt(receiptId)
+        receipts.deleteById(receiptId)
+        receipt.imagePath
+    }
+
     private companion object {
         const val RECONCILIATION_TOLERANCE_MINOR = 2L
 

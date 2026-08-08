@@ -1,5 +1,72 @@
 # Pocket Index — Next Session
 
+## Status after 8 August 2026
+
+On-device testing with a real Lidl receipt is underway. Work completed this day:
+
+- **Store-format parser hardening.** Characterisation tests for representative
+  Tesco, Sainsbury's, Morrisons, and Costco UK receipts, plus four generic
+  fixes: `BALANCE DUE` recognised as a total label (Sainsbury's receipts
+  previously lost their total); Clubcard/Nectar/More Card price cuts treated as
+  promotions; promotion lines now win over the payment-word ignore list (a
+  Morrisons "More Card Price" cut was being dropped, breaking reconciliation);
+  scheme savings summaries ("CLUBCARD SAVINGS", "SAVINGS WITH YOUR MORE CARD")
+  ignored so discounts are not double counted. The fixtures are reconstructions
+  from documented formats, not real scans — replace each with genuine OCR text
+  on first real use.
+- **Receipt deletion.** A receipt can be deleted from its detail screen behind a
+  confirmation dialog stating the impact. Deletion removes the receipt, its
+  line items, its private image, and the price observations those lines created
+  (the schema otherwise orphans them via `SET NULL` and they keep feeding the
+  index). It cancels the receipt's unique extraction work and runs under
+  `LocalDataLock`, so it cannot interleave with a reset or the worker's locked
+  write.
+
+Known gaps from this work:
+
+- No automated coverage of the deletion path (same pure-JVM limitation as the
+  reset path).
+- The real Lidl scan still fails on-device even though the same receipt's
+  idealised text passes in tests — see the scanner item below.
+
+## Ideas and next steps (8 August 2026)
+
+1. **Scanner accuracy — highest priority, currently blocked on evidence.** The
+   parser handles the Lidl receipt's clean text, so the failure is in real ML
+   Kit OCR output, most likely right-column price fragments failing the
+   `mergeSameRowFragments` row-overlap test on crumpled paper. Get the stored
+   `raw_text` from the device (`adb` with the phone plugged in, app id
+   `com.siyandimitrov.pocketindex`, database `pocket-index.db`) or a screenshot
+   of the receipt detail's "OCR evidence" section, turn it into a fixture, then
+   fix the geometry or ignore rules generically. Do not reach for an on-device
+   LLM first: Gemini Nano is unavailable on the Pixel 7 (AICore needs Pixel
+   8+), and a bundled small model (MediaPipe/Gemma-class, ~1 GB APK) would sit
+   on the same garbled OCR text. Reconsider only if real OCR text proves
+   fundamentally unusable.
+2. **Backup: user-triggered export/import.** Currently there is no backup of
+   any kind — backup rules exclude everything and the app has no network
+   permission, so a lost phone loses the history, and a future switch to
+   release signing forces an uninstall. Add "Back up to file" / restore in
+   settings via the system file picker (works without network permission),
+   zipping the database and receipt images. Companion tweak: include the
+   database in the `device-transfer` rules for phone-to-phone migration. A
+   cloud backend stays out of scope. Note: the database has no migration setup
+   (version 1, no `fallbackToDestructiveMigration`) — add real migrations
+   before the first schema change ships to testers.
+3. **Read the printed purchase date.** `purchasedAt` defaults to the scan day;
+   the printed receipt date (e.g. Lidl's `Date: 03/08/26`) is only used to
+   ignore lines. Extract it and prefill review, so late-scanned receipts land
+   in the right month without manual correction.
+4. **Validate store fixtures against real receipts.** On the first real
+   Tesco/Sainsbury's/Morrisons/Costco scan, replace the reconstructed fixture
+   with genuine OCR text. Known deliberate gaps, unfixed until then: weighted
+   produce ("0.912 kg @ £0.90/kg") parses with a junk description and review
+   flag; Costco leading item codes stay in descriptions and weaken matching;
+   Costco TPD/IRC markdown codes are unrecognised (their negative amounts are
+   still excluded by default). If Costco becomes a real shop, prices are
+   ex-VAT — that needs a per-merchant "prices exclude VAT" flag so its
+   observations stay comparable, not a receipt-type system.
+
 ## Status after 31 July 2026
 
 Features 1–5 in this handoff are implemented and validated:

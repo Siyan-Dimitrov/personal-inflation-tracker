@@ -81,6 +81,15 @@ interface PriceObservationDao {
     @Query("DELETE FROM price_observations WHERE receipt_line_item_id = :lineItemId")
     suspend fun deleteForLineItem(lineItemId: Long)
 
+    @Query(
+        """
+        DELETE FROM price_observations
+        WHERE receipt_line_item_id IN
+            (SELECT id FROM line_items WHERE receipt_id = :receiptId)
+        """,
+    )
+    suspend fun deleteForReceipt(receiptId: Long)
+
     @Query("UPDATE price_observations SET product_id = :targetProductId WHERE product_id = :sourceProductId")
     suspend fun reassignProduct(sourceProductId: Long, targetProductId: Long): Int
 }

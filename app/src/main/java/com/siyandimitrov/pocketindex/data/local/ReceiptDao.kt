@@ -126,6 +126,9 @@ interface ReceiptDao {
         userConfirmed: Boolean,
     )
 
+    @Query("DELETE FROM receipts WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT COUNT(*) FROM receipts WHERE status = :status")
     fun observeCountByStatus(status: ReceiptStatus): Flow<Int>
 

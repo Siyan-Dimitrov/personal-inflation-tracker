@@ -175,6 +175,11 @@ class ReceiptExtractionScheduler @Inject constructor(
             request,
         ).awaitCommit()
     }
+
+    fun cancel(receiptId: Long) {
+        WorkManager.getInstance(applicationContext)
+            .cancelUniqueWork(ReceiptExtractionWorker.uniqueName(receiptId))
+    }
 }
 
 private suspend fun Operation.awaitCommit() {
