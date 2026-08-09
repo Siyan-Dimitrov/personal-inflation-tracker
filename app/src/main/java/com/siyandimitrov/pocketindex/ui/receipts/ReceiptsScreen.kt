@@ -24,7 +24,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.PriceCheck
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -51,11 +50,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siyandimitrov.pocketindex.data.local.UnitType
 import com.siyandimitrov.pocketindex.ui.components.StatusPill
 import com.siyandimitrov.pocketindex.ui.components.StatusTone
+import com.siyandimitrov.pocketindex.ui.components.productEmoji
 import java.util.Locale
 
 @Composable
@@ -535,10 +536,9 @@ private fun LiveReviewItemCard(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Inventory2,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                    Text(
+                        productEmoji(item.productName ?: item.rawText),
+                        fontSize = 24.sp,
                     )
                 }
                 Column(Modifier.weight(1f)) {

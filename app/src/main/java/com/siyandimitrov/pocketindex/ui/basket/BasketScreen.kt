@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siyandimitrov.pocketindex.data.local.CategoryEntity
@@ -63,6 +64,7 @@ import com.siyandimitrov.pocketindex.data.local.ObservationSource
 import com.siyandimitrov.pocketindex.data.local.UnitType
 import com.siyandimitrov.pocketindex.ui.components.MiniLineChart
 import com.siyandimitrov.pocketindex.ui.components.StatusPill
+import com.siyandimitrov.pocketindex.ui.components.productEmoji
 import com.siyandimitrov.pocketindex.ui.components.StatusTone
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -242,7 +244,7 @@ private fun ProductRow(product: BasketProductUi, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(13.dp),
         ) {
-            ProductIcon()
+            ProductIcon(product.name, product.categoryName)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
                     product.name,
@@ -288,18 +290,22 @@ private fun ProductRow(product: BasketProductUi, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProductIcon() {
+private fun ProductIcon(name: String? = null, categoryName: String? = null) {
     Box(
         modifier = Modifier
             .size(46.dp)
             .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(14.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            Icons.Rounded.Inventory2,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
+        if (name != null) {
+            Text(productEmoji(name, categoryName), fontSize = 24.sp)
+        } else {
+            Icon(
+                Icons.Rounded.Inventory2,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
@@ -382,7 +388,7 @@ private fun ProductDetail(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    ProductIcon()
+                    ProductIcon(detail.product.canonicalName, detail.categoryName)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             detail.currentMeanUnitPriceMicros?.let {
