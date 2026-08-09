@@ -28,3 +28,8 @@ Thumbs.db
 
 # Generated test artifacts
 test-results/
+
+# Receipt photos dropped into the repo root for parser debugging — never publish
+/*.jpg
+/*.jpeg
+/*.png
