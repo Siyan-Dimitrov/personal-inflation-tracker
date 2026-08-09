@@ -9,10 +9,13 @@ import com.siyandimitrov.pocketindex.data.local.PriceObservationDao
 import com.siyandimitrov.pocketindex.data.local.ProductDao
 import com.siyandimitrov.pocketindex.data.local.ReceiptDao
 import com.siyandimitrov.pocketindex.data.local.RecurringItemDao
+import com.siyandimitrov.pocketindex.BuildConfig
 import com.siyandimitrov.pocketindex.extraction.MlKitReceiptOcrService
 import com.siyandimitrov.pocketindex.extraction.ReceiptExtractor
 import com.siyandimitrov.pocketindex.extraction.ReceiptOcrService
 import com.siyandimitrov.pocketindex.extraction.RuleBasedReceiptExtractor
+import com.siyandimitrov.pocketindex.suggestions.GeminiProductSuggestionService
+import com.siyandimitrov.pocketindex.suggestions.ProductSuggestionService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -65,4 +68,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideReceiptExtractor(): ReceiptExtractor = RuleBasedReceiptExtractor()
+
+    @Provides
+    @Singleton
+    fun provideProductSuggestionService(): ProductSuggestionService =
+        GeminiProductSuggestionService(BuildConfig.GEMINI_API_KEY)
 }

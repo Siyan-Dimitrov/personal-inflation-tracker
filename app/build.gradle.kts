@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +9,13 @@ plugins {
 }
 
 val appVersionName = "0.1.0"
+
+// The optional Gemini key lives in local.properties, which is gitignored, so the public
+// repository never carries a credential. Builds without a key stay fully offline.
+val geminiApiKey: String = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}.getProperty("gemini.apiKey")?.trim().orEmpty()
 
 android {
     namespace = "com.siyandimitrov.pocketindex"
@@ -21,6 +30,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
     buildTypes {
@@ -102,6 +113,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.2.20")
+    // Real org.json for JVM unit tests; the android.jar test stub throws on every method.
+    testImplementation("org.json:json:20240303")
 
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")

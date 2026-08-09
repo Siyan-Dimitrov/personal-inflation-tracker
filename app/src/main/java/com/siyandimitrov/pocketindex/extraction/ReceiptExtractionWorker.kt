@@ -18,6 +18,7 @@ import com.siyandimitrov.pocketindex.data.repository.CatalogRepository
 import com.siyandimitrov.pocketindex.data.repository.ExtractedLineItem
 import com.siyandimitrov.pocketindex.data.repository.ReceiptExtraction
 import com.siyandimitrov.pocketindex.data.repository.ReceiptRepository
+import com.siyandimitrov.pocketindex.suggestions.ProductSuggestionService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -51,6 +52,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
     private val catalogRepository: CatalogRepository,
     private val ocrService: ReceiptOcrService,
     private val extractor: ReceiptExtractor,
+    private val suggestionService: ProductSuggestionService,
 ) : CoroutineWorker(appContext, workerParameters) {
 
     override suspend fun doWork(): Result {
@@ -92,14 +94,21 @@ class ReceiptExtractionWorker @AssistedInject constructor(
             // A receipt dated after today is an OCR misread, so the scan date stays in place.
             val today = SimpleDateFormat("yyyy-MM-dd", Locale.UK).format(Date())
             val purchasedAt = extraction.purchasedAt?.takeIf { it <= today }
+            val suggestedProductIds = suggestProductIds(extraction, candidates)
             val lineItems = extraction.lineItems.map { item ->
+                val suggestedId = item.productMatch?.productId
+                    ?: suggestedProductIds[item.description]
                 ExtractedLineItem(
                     rawText = item.rawText,
                     quantity = item.quantity,
                     unitPriceMinor = (item.unitPriceMinor ?: item.lineTotalMinor).toLong(),
                     lineTotalMinor = item.lineTotalMinor.toLong(),
-                    productId = item.productMatch?.productId,
-                    matchConfidence = item.productMatch?.confidence,
+                    productId = suggestedId,
+                    matchConfidence = when {
+                        item.productMatch != null -> item.productMatch.confidence
+                        suggestedId != null -> SUGGESTION_CONFIDENCE
+                        else -> null
+                    },
                 )
             }
             val calculatedTotal = lineItems.sumOf(ExtractedLineItem::lineTotalMinor)
@@ -144,12 +153,39 @@ class ReceiptExtractionWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * Asks the optional cloud model to match the lines the deterministic matcher missed.
+     *
+     * Best-effort by design: no key, no candidates, or any failure returns an empty map and the
+     * lines simply stay unmatched for manual review. Suggestions carry [SUGGESTION_CONFIDENCE],
+     * below the confident-match threshold, so the review screen always presents them for
+     * confirmation.
+     */
+    private suspend fun suggestProductIds(
+        extraction: ExtractionResult,
+        candidates: List<ProductCandidate>,
+    ): Map<String, Long> {
+        if (!suggestionService.isEnabled || candidates.isEmpty()) return emptyMap()
+        val unmatched = extraction.lineItems
+            .filter { it.productMatch == null && !isPromotionLine(it.rawText) }
+            .map { it.description }
+            .distinct()
+        if (unmatched.isEmpty()) return emptyMap()
+        val candidatesByName = candidates.associateBy { it.canonicalName }
+        return suggestionService.suggestProducts(unmatched, candidates.map { it.canonicalName })
+            .mapNotNull { (description, name) ->
+                candidatesByName[name]?.let { description to it.id }
+            }
+            .toMap()
+    }
+
     companion object {
         const val KEY_RECEIPT_ID = "receipt_id"
         const val KEY_ERROR = "extraction_error"
         private const val MISSING_RECEIPT_ID = -1L
         private const val MAX_MERCHANT_LENGTH = 80
         private const val MAX_ERROR_LENGTH = 240
+        private const val SUGGESTION_CONFIDENCE = 0.70
 
         fun uniqueName(receiptId: Long): String = "receipt-extraction-$receiptId"
 

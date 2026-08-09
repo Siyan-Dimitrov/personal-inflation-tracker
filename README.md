@@ -11,7 +11,9 @@ The app is designed around a simple loop:
 4. Track comparable unit prices and personal inflation over time.
 
 All data, receipt images, OCR, and calculations stay on the device. The app
-does not request network access, create accounts, or include analytics.
+creates no accounts and includes no analytics. Network access exists for one
+optional, build-time opt-in feature — AI product-match suggestions — described
+below; a build without an API key never makes a network request.
 
 ![Pocket Index Pixel 7 Pro design](design/pocket-index-pixel7pro-mockup.png)
 
@@ -63,6 +65,28 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 The debug APK is written to
 `app/build/outputs/apk/debug/pocket-index-0.1.0-debug.apk`.
+
+## Optional: AI product-match suggestions (bring your own key)
+
+Receipt lines the deterministic matcher cannot resolve (for example
+`AB ROOSTER POTS 2KG` → Potatoes) can be matched by the Gemini API free tier.
+The feature is off unless you provide your own key at build time:
+
+1. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey).
+2. Add it to `local.properties` (which is gitignored — never commit a key):
+
+   ```properties
+   gemini.apiKey=YOUR_KEY_HERE
+   ```
+
+3. Rebuild. Suggestions appear in the receipt review screen for confirmation;
+   nothing enters the index without your approval.
+
+What leaves the device: only the unmatched line descriptions and your product
+catalogue names — never prices, totals, dates, or images. On Google's free
+tier, submitted content may be used to improve their services. The key is
+compiled into the APK, so do not share APKs built with your key. Without a
+key, the app performs no network requests at all.
 
 ## Project structure
 
