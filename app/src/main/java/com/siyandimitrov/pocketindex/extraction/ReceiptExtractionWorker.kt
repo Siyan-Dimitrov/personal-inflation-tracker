@@ -22,6 +22,9 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executor
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -86,6 +89,9 @@ class ReceiptExtractionWorker @AssistedInject constructor(
                 ?.trim()
                 ?.take(MAX_MERCHANT_LENGTH)
                 ?.takeIf(String::isNotBlank)
+            // A receipt dated after today is an OCR misread, so the scan date stays in place.
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.UK).format(Date())
+            val purchasedAt = extraction.purchasedAt?.takeIf { it <= today }
             val lineItems = extraction.lineItems.map { item ->
                 ExtractedLineItem(
                     rawText = item.rawText,
@@ -111,6 +117,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
                     receiptId = receiptId,
                     extraction = ReceiptExtraction(
                         merchantId = merchantId,
+                        purchasedAt = purchasedAt,
                         subtotalMinor = extraction.totals.subtotalMinor?.toLong(),
                         taxMinor = extraction.totals.taxMinor?.toLong(),
                         totalMinor = extraction.totals.totalMinor?.toLong() ?: calculatedTotal,

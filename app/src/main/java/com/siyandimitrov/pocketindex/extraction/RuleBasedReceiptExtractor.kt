@@ -18,9 +18,11 @@ class RuleBasedReceiptExtractor(
         ocrResult: OcrResult,
         candidates: List<ProductCandidate>,
     ): ExtractionResult {
-        val sourceLines = mergeSameRowFragments(ocrResult.lines).ifEmpty {
-            ocrResult.text.lines().filter(String::isNotBlank).map { OcrLine(it) }
-        }
+        val sourceLines = mergeHangingDescriptions(
+            mergeSameRowFragments(ocrResult.lines).ifEmpty {
+                ocrResult.text.lines().filter(String::isNotBlank).map { OcrLine(it) }
+            },
+        )
         val classifiedTotals = sourceLines.mapIndexedNotNull { index, line ->
             classifyTotal(line.text)?.let { index to it }
         }
@@ -38,6 +40,7 @@ class RuleBasedReceiptExtractor(
         return ExtractionResult(
             rawOcrText = ocrResult.text,
             merchantName = detectMerchant(sourceLines),
+            purchasedAt = detectPurchaseDate(sourceLines),
             lineItems = items,
             totals = totals,
             validation = validation,
@@ -83,6 +86,74 @@ class RuleBasedReceiptExtractor(
         return (merged + unpositioned).sortedWith(
             compareBy<OcrLine> { it.boundingBox?.top ?: Int.MAX_VALUE }
                 .thenBy { it.boundingBox?.left ?: Int.MAX_VALUE },
+        )
+    }
+
+    /**
+     * Costco-style receipts print an item as two rows: the description alone, then a row holding
+     * the item code, quantity and prices with no letters of its own. Rejoin each such pair into
+     * one logical line so the price row does not lose its description.
+     */
+    private fun mergeHangingDescriptions(lines: List<OcrLine>): List<OcrLine> {
+        val merged = mutableListOf<OcrLine>()
+        var pending: OcrLine? = null
+        for (line in lines) {
+            val text = line.text.trim()
+            val current = pending
+            when {
+                isBareDescription(text) -> {
+                    current?.let(merged::add)
+                    pending = line
+                }
+                current != null && isPriceRowWithoutDescription(text) -> {
+                    merged += combineLines(current, line)
+                    pending = null
+                }
+                else -> {
+                    current?.let(merged::add)
+                    pending = null
+                    merged += line
+                }
+            }
+        }
+        pending?.let(merged::add)
+        return merged
+    }
+
+    private fun isBareDescription(text: String): Boolean =
+        text.any(Char::isLetter) &&
+            moneyRegex.find(text) == null &&
+            !headingRegex.matches(text) &&
+            !dateOrTimeRegex.containsMatchIn(text) &&
+            !ignoredLineRegex.containsMatchIn(text)
+
+    /**
+     * A row such as "705 1x 5.49 5.49 Z": an item code, optional quantity, and price columns.
+     * One stray letter is allowed for flags Costco prints beside the code, such as "239 K".
+     */
+    private fun isPriceRowWithoutDescription(text: String): Boolean {
+        val amounts = moneyRegex.findAll(text).toList()
+        amounts.lastOrNull()
+            ?.takeIf { text.substring(it.range.last + 1).isFinalColumnSuffix() }
+            ?: return false
+        val lead = text.substring(0, amounts.first().range.first)
+        return lead.firstOrNull()?.isDigit() == true &&
+            (lead.replace(danglingAtQuantityRegex, " ").count(Char::isLetter) <= 1 ||
+                weighedLeadRegex.matches(lead))
+    }
+
+    private fun combineLines(description: OcrLine, priceRow: OcrLine): OcrLine {
+        val boxes = listOfNotNull(description.boundingBox, priceRow.boundingBox)
+        return OcrLine(
+            text = "${description.text.trim()} ${priceRow.text.trim()}",
+            boundingBox = boxes.takeIf(List<OcrBoundingBox>::isNotEmpty)?.let {
+                OcrBoundingBox(
+                    left = it.minOf(OcrBoundingBox::left),
+                    top = it.minOf(OcrBoundingBox::top),
+                    right = it.maxOf(OcrBoundingBox::right),
+                    bottom = it.maxOf(OcrBoundingBox::bottom),
+                )
+            },
         )
     }
 
@@ -146,23 +217,58 @@ class RuleBasedReceiptExtractor(
         } ?: return null
 
         val lineTotalMinor = finalAmount.toMinor() ?: return null
-        var description = rawText.substring(0, finalAmount.range.first).trim()
-        val quantity = parsePurchaseQuantity(description)
-        description = stripPurchaseQuantity(description)
+        val preFinal = rawText.substring(0, finalAmount.range.first)
+        val weighted = weighedProduceRegex.find(preFinal)
 
-        val earlierAmounts = amountMatches.dropLast(1)
-            .filter { it.range.first < finalAmount.range.first }
-        val explicitUnitPrice = earlierAmounts.lastOrNull()?.toMinor()
-        val calculatedUnitPrice = if (quantity > 0.0) {
-            (lineTotalMinor / quantity).roundToInt()
+        var description: String
+        var quantity = 1.0
+        val unitPrice: Int?
+        var ambiguousPrice = false
+
+        if (weighted != null) {
+            // Weighed produce such as "BROCCOLI LOOSE 0.540 kg @ £2.19/kg £1.18": the printed
+            // rate is per kilogram, not a unit price column, and the weight is the pack size.
+            description = preFinal.substring(0, weighted.range.first).trim()
+                .ifBlank { preFinal.trim() }
+            unitPrice = lineTotalMinor
         } else {
-            null
-        }
-        val unitPrice = explicitUnitPrice ?: calculatedUnitPrice
+            description = preFinal.trim()
+            quantity = parsePurchaseQuantity(description)
+            description = stripPurchaseQuantity(description)
 
-        // Price columns before the total are not part of the product description.
-        earlierAmounts.firstOrNull()?.let { description = rawText.substring(0, it.range.first).trim() }
-        description = stripPurchaseQuantity(description).trim(' ', '-', ':')
+            val earlierAmounts = amountMatches.dropLast(1)
+                .filter { it.range.first < finalAmount.range.first }
+            val explicitUnitPrice = earlierAmounts.lastOrNull()?.toMinor()
+
+            // Price columns before the total are not part of the product description.
+            earlierAmounts.firstOrNull()?.let {
+                description = rawText.substring(0, it.range.first).trim()
+            }
+            description = stripPurchaseQuantity(description)
+
+            // Generic tills print "2 ITEM 3.00 6.00" with no multiplication sign, so a leading
+            // count is only believed when it reproduces the line total from the unit price.
+            if (quantity == 1.0 && explicitUnitPrice != null) {
+                bareLeadingCountRegex.find(description)?.let { match ->
+                    val count = match.groupValues[1].decimal()
+                    if (abs(explicitUnitPrice * count - lineTotalMinor) <= validationToleranceMinor) {
+                        quantity = count
+                        description = description.removeRange(match.range)
+                    }
+                }
+            }
+
+            val calculatedUnitPrice = if (quantity > 0.0) {
+                (lineTotalMinor / quantity).roundToInt()
+            } else {
+                null
+            }
+            unitPrice = explicitUnitPrice ?: calculatedUnitPrice
+            ambiguousPrice = earlierAmounts.size > 1 ||
+                (explicitUnitPrice != null &&
+                    abs(explicitUnitPrice * quantity - lineTotalMinor) > validationToleranceMinor)
+        }
+        description = description.trim(' ', '-', ':')
         if (description.isBlank() || description.none(Char::isLetter)) return null
 
         // A coupon or price cut is an adjustment to another line, so it is never worth matching to
@@ -177,7 +283,14 @@ class RuleBasedReceiptExtractor(
         val matchedCandidate = acceptedMatch?.let { match ->
             candidates.firstOrNull { it.id == match.productId }
         }
-        val parsedPack = parsePackSize(description)
+        val weighedPack = weighted?.let { match ->
+            val (baseAmount, baseUnit) = toBaseUnit(
+                match.groupValues[1].decimal(),
+                match.groupValues[2],
+            )
+            ParsedPackSize(amount = baseAmount, baseUnit = baseUnit, sourceText = match.value)
+        }
+        val parsedPack = weighedPack ?: parsePackSize(description)
         val inheritedPack = if (parsedPack == null &&
             matchedCandidate?.packSize != null &&
             matchedCandidate.baseUnit != BaseUnit.UNKNOWN
@@ -192,10 +305,7 @@ class RuleBasedReceiptExtractor(
         }
 
         val issues = buildSet {
-            if (earlierAmounts.size > 1 ||
-                (explicitUnitPrice != null &&
-                    abs(explicitUnitPrice * quantity - lineTotalMinor) > validationToleranceMinor)
-            ) {
+            if (ambiguousPrice) {
                 add(LineItemIssue.AMBIGUOUS_PRICE)
             }
             // A promotional line needs no product, so its absence is not a review issue.
@@ -279,6 +389,9 @@ class RuleBasedReceiptExtractor(
         return when {
             subtotalLabel.containsMatchIn(label) ->
                 ClassifiedTotal(TotalType.SUBTOTAL, amount)
+            // "TOTAL(INCL VAT)" is the grand total, so it must outrank the bare VAT tax label.
+            inclVatTotalLabel.containsMatchIn(label) ->
+                ClassifiedTotal(TotalType.TOTAL, amount)
             taxLabel.containsMatchIn(label) ->
                 ClassifiedTotal(TotalType.TAX, amount)
             totalLabel.containsMatchIn(label) && !nonTotalLabel.containsMatchIn(label) ->
@@ -286,6 +399,45 @@ class RuleBasedReceiptExtractor(
             else -> null
         }
     }
+
+    /**
+     * UK receipts print the transaction date day-first, for example "12/08/26 18:32",
+     * "12.08.2026" or "12 AUG 26". The first printed date is taken; whether it is plausible
+     * (for example not in the future) is for the caller to judge, since this parser has no clock.
+     */
+    private fun detectPurchaseDate(lines: List<OcrLine>): String? =
+        lines.asSequence()
+            .map(OcrLine::text)
+            .mapNotNull(::parsePurchaseDate)
+            .firstOrNull()
+
+    private fun parsePurchaseDate(text: String): String? {
+        numericDateRegex.findAll(text).forEach { match ->
+            toIsoDate(
+                day = match.groupValues[1].toInt(),
+                month = match.groupValues[2].toInt(),
+                year = match.groupValues[3].toFourDigitYear(),
+            )?.let { return it }
+        }
+        textualDateRegex.findAll(text).forEach { match ->
+            toIsoDate(
+                day = match.groupValues[1].toInt(),
+                month = monthAbbreviations.indexOf(match.groupValues[2].uppercase()) + 1,
+                year = match.groupValues[3].toFourDigitYear(),
+            )?.let { return it }
+        }
+        return null
+    }
+
+    private fun toIsoDate(day: Int, month: Int, year: Int): String? {
+        if (year !in 2000..2099 || month !in 1..12 || day !in 1..monthLengths[month - 1]) return null
+        val isLeapYear = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+        if (month == 2 && day == 29 && !isLeapYear) return null
+        return "%04d-%02d-%02d".format(year, month, day)
+    }
+
+    private fun String.toFourDigitYear(): Int =
+        toInt().let { if (it < 100) 2000 + it else it }
 
     private fun detectMerchant(lines: List<OcrLine>): String? =
         lines.asSequence()
@@ -393,9 +545,14 @@ class RuleBasedReceiptExtractor(
          * money.
          */
         private val moneyRegex =
-            Regex("""(?<![\d.])((?:£\s*)?-?\d{1,5}[.,]\d{2}|\d{1,5}\s*[pP]\b)(-)?(?!\d)""")
+            Regex("""(?<![\d.])(-?\s*(?:£\s*)?-?\d{1,5}[.,]\d{2}|\d{1,5}\s*[pP]\b)(-)?(?!\d)""")
         private val subtotalLabel =
-            Regex("""\b(?:SUB\s*TOTAL|SUBTOTAL|NET\s*TOTAL)\b""", RegexOption.IGNORE_CASE)
+            Regex(
+                """\b(?:SUB\s*TOTAL|SUBTOTAL|NET\s*TOTAL|TOTAL\s*\(?\s*EX(?:CL)?\.?\s*VAT)\b""",
+                RegexOption.IGNORE_CASE,
+            )
+        private val inclVatTotalLabel =
+            Regex("""\bTOTAL\s*\(?\s*INC(?:L)?\.?\s*VAT\b""", RegexOption.IGNORE_CASE)
         private val taxLabel =
             Regex("""\b(?:VAT|TAX)\b""", RegexOption.IGNORE_CASE)
         private val totalLabel =
@@ -409,17 +566,30 @@ class RuleBasedReceiptExtractor(
             Regex("""^\s*(?:ITEM|DESCRIPTION)?\s*(?:QTY|QUANTITY)?\s*(?:PRICE|AMOUNT|TOTAL)?\s*$""", RegexOption.IGNORE_CASE)
         private val ignoredLineRegex =
             Regex(
-                """\b(?:CASH|CARD|VISA|MASTERCARD|MAESTRO|AMEX|TENDER|CHANGE|BALANCE|AUTH|AID|CONTACTLESS|PAYMENT|AMOUNT|RECEIPT\s*(?:NO|NUMBER)|TEL|TELEPHONE)\b""",
+                """\b(?:CASH|CARD|VISA|MASTERCARD|MAESTRO|AMEX|TENDER|CHANGE|BALANCE|AUTH|AID|CONTACTLESS|PAYMENT|AMOUNT|SALE|POINTS?|ORIGINAL\s+PRICE|PRICE\s+REDUCTION|RECEIPT\s*(?:NO|NUMBER)|TEL|TELEPHONE)\b""",
                 RegexOption.IGNORE_CASE,
             )
         /** The per-rate VAT breakdown, for example "B 20 % 10.60 1.77", is not a purchase. */
         private val vatBreakdownRegex = Regex("""^[A-Z]\s+\d{1,2}(?:[.,]\d+)?\s*%""")
         /** A savings summary restates discounts already printed against their own lines. */
         private val discountSummaryRegex = Regex(
-            """\b(?:TOTAL\s+(?:DISCOUNT|SAVINGS?)|(?:DISCOUNT|SAVINGS?)\s+TOTAL|YOU\s+SAVED|(?:CLUBCARD|NECTAR|MORE\s+CARD)\s+SAVINGS?|SAVINGS?\s+WITH)\b""",
+            """\b(?:TOTAL\s+(?:DISCOUNT|SAVINGS?)|(?:DISCOUNT|SAVINGS?)\s+TOTAL|YOU\s+SAVED|(?:CLUBCARD|NECTAR|MORE\s+CARD)\s+SAVINGS?|SAVINGS?\s+WITH)\b|^\s*PROMOTIONS?\s+-?\s*£?\s*-?\d{1,5}[.,]\d{2}\s*$""",
             RegexOption.IGNORE_CASE,
         )
         private val vatClassSuffixRegex = Regex("""\s*[A-Z]\*?\s*""")
+        /** Day-first numeric date, for example "12/08/26" or "12.08.2026". */
+        private val numericDateRegex =
+            Regex("""\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})\b""")
+        /** Day and abbreviated or full month name, for example "12 AUG 26" or "12 August 2026". */
+        private val textualDateRegex = Regex(
+            """\b(\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*(\d{4}|\d{2})\b""",
+            RegexOption.IGNORE_CASE,
+        )
+        private val monthAbbreviations = listOf(
+            "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+            "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+        )
+        private val monthLengths = intArrayOf(31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
         private val dateOrTimeRegex = Regex(
             """(?:\b\d{1,2}[/:.-]\d{1,2}[/:.-]\d{2,4}\b|\b\d{1,2}:\d{2}(?::\d{2})?\b)""",
         )
@@ -449,6 +619,17 @@ class RuleBasedReceiptExtractor(
                 RegexOption.IGNORE_CASE,
             )
         private val repeatedWhitespaceRegex = Regex("""\s+""")
+        /** A weighed line's measurement and rate, for example "0.540 kg @ £2.19/kg". */
+        private val weighedProduceRegex = Regex(
+            """(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|ltr)\s*@\s*£?\s*\d{1,5}[.,]\d{2}\s*/\s*(?:kg|g|ml|l|ltr|lb)\b""",
+            RegexOption.IGNORE_CASE,
+        )
+        /** The measurement column of a weighed price row, for example "0.540 kg @". */
+        private val weighedLeadRegex = Regex(
+            """^\s*\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|ltr)\s*@?\s*$""",
+            RegexOption.IGNORE_CASE,
+        )
+        private val bareLeadingCountRegex = Regex("""^(\d{1,2})\s+""")
     }
 }
 

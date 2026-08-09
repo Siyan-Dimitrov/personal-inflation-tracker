@@ -60,6 +60,7 @@ interface ReceiptDao {
         """
         UPDATE receipts
         SET merchant_id = :merchantId,
+            purchased_at = COALESCE(:purchasedAt, purchased_at),
             subtotal_minor = :subtotalMinor,
             tax_minor = :taxMinor,
             total_minor = :totalMinor,
@@ -71,6 +72,7 @@ interface ReceiptDao {
     suspend fun applyExtraction(
         receiptId: Long,
         merchantId: Long?,
+        purchasedAt: String?,
         subtotalMinor: Long?,
         taxMinor: Long?,
         totalMinor: Long,

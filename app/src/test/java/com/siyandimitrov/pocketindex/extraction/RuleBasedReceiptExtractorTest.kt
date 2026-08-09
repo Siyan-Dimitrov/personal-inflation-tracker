@@ -208,9 +208,12 @@ class RuleBasedReceiptExtractorTest {
         assertEquals(312, result.validation.calculatedLineItemsMinor)
         // The Clubcard cut is a promotion, so it carries no product-match review noise.
         assertTrue(result.lineItems[1].issues.isEmpty())
-        // Weighted produce is not yet understood: the amount survives for reconciliation but
-        // the description degrades to the weight fragment and the line asks for review.
-        assertTrue(LineItemIssue.AMBIGUOUS_PRICE in result.lineItems[2].issues)
+        // Weighed produce rejoins its description row and takes the weight as its pack size.
+        with(result.lineItems[2]) {
+            assertEquals("BANANAS LOOSE", description)
+            assertEquals(912.0, packSize?.amount)
+            assertFalse(LineItemIssue.AMBIGUOUS_PRICE in issues)
+        }
     }
 
     @Test
@@ -288,6 +291,152 @@ class RuleBasedReceiptExtractorTest {
     }
 
     @Test
+    fun `reads a generic till receipt with a quantity column and no total line`() = runBlocking {
+        val result = extractor.extract(
+            ocrResult(
+                "SPICE OF ASIA",
+                "54 JOHN STREET",
+                "TEL:01224 645654",
+                "TRANS ID : 2969383",
+                "Staff ID: 101 Date: 09/08/2026 10:15",
+                "1 HEERA BROKEN CASHEW NUT 7 6.99 6.99",
+                "2 HEERA PINK PEANUTS 1KG 4.99 9.98",
+                "1 DON MAIZ AREPA CONSAL 800 6.49 6.49",
+                "* SUB TOTAL 23.46",
+                "* CARD PAYMENT 23.46",
+                "* Number Of Items : 4 *",
+                "Mastercard SALE",
+                "SALE 23.46",
+            ),
+            emptyList(),
+        )
+
+        assertEquals("SPICE OF ASIA", result.merchantName)
+        assertEquals("2026-08-09", result.purchasedAt)
+        // The leading count column is understood when it reproduces the line total.
+        assertEquals(
+            listOf(
+                "HEERA BROKEN CASHEW NUT 7",
+                "HEERA PINK PEANUTS 1KG",
+                "DON MAIZ AREPA CONSAL 800",
+            ),
+            result.lineItems.map { it.description },
+        )
+        assertEquals(listOf(1.0, 2.0, 1.0), result.lineItems.map { it.quantity })
+        assertEquals(listOf(699, 998, 649), result.lineItems.map { it.lineTotalMinor })
+        // The card payment and its SALE echo are not purchases; this till prints no TOTAL line.
+        assertEquals(2_346, result.totals.subtotalMinor)
+        assertNull(result.totals.totalMinor)
+        assertEquals(2_346, result.validation.calculatedLineItemsMinor)
+    }
+
+    @Test
+    fun `reads a Sainsburys receipt with weighed produce and loyalty summaries`() = runBlocking {
+        val result = extractor.extract(
+            ocrResult(
+                "Sainsbury's",
+                "Vat Number : 660 4548 36",
+                "JS S/SKM MLK 1.136L £1.20",
+                "BROCCOLI LOOSE",
+                "0.540 kg @ £2.19/kg £1.18",
+                "PRICE REDUCTION",
+                "ORIGINAL PRICE £2.00",
+                "OEP REFRIED BEANS £2.40",
+                "Nectar Price Saving -£0.90",
+                "JS FAIRTRD BANANA LS",
+                "0.655 kg @ £0.95/kg £0.62",
+                "16 BALANCE DUE £4.50",
+                "Debit Mastercard £4.50",
+                "CHANGE £0.00",
+                "YOUR SAVINGS TODAY:",
+                "PROMOTIONS -£0.90",
+                "MY NECTAR SUMMARY",
+                "POINTS EARNED ON £4.50",
+                "PREVIOUS POINTS BALANCE 7245",
+                "YOUR POINTS ARE WORTH £36.31",
+                "#5549 10:37:00 09AUG2026",
+            ),
+            emptyList(),
+        )
+
+        assertEquals("Sainsbury's", result.merchantName)
+        assertEquals("2026-08-09", result.purchasedAt)
+        // Price-reduction notes, the promotions summary, and the Nectar points block are not
+        // purchases; the per-line "Nectar Price Saving" keeps its minus printed before the £.
+        assertEquals(
+            listOf(
+                "JS S/SKM MLK 1.136L",
+                "BROCCOLI LOOSE",
+                "OEP REFRIED BEANS",
+                "Nectar Price Saving",
+                "JS FAIRTRD BANANA LS",
+            ),
+            result.lineItems.map { it.description },
+        )
+        assertEquals(listOf(120, 118, 240, -90, 62), result.lineItems.map { it.lineTotalMinor })
+        // Weighed produce keeps its description and takes the printed weight as its pack size.
+        with(result.lineItems[1]) {
+            assertEquals(540.0, packSize?.amount)
+            assertEquals(BaseUnit.MASS_G, packSize?.baseUnit)
+            assertFalse(LineItemIssue.AMBIGUOUS_PRICE in issues)
+        }
+        assertEquals(450, result.totals.totalMinor)
+        assertEquals(450, result.validation.calculatedLineItemsMinor)
+    }
+
+    @Test
+    fun `reads a Costco receipt printed as description rows above price rows`() = runBlocking {
+        val result = extractor.extract(
+            ocrResult(
+                "COSTCO WHOLESALE",
+                "Aberdeen Warehouse (01224 745560)",
+                "Individual 99474298101",
+                "WATERMELON EACH",
+                "705 1x 5.49 5.49 Z",
+                "KS AA BURGERS",
+                "91158 1x 19.99 19.99 Z",
+                "GILLETTE GEL 6X200",
+                "352431 1x 9.49 9.49 A",
+                "IRC HASS AVOCADOS",
+                "668527 1x 1.00 1.00-Z",
+                "HASS AVOCADOS",
+                "239 K 1x 4.99 4.99 Z",
+                "**** TOTAL(INCL VAT) 40.86",
+                "AMOUNT: £40.86 - APPROVED",
+                "Card:AMERICAN EXPRESS EMV",
+                "16/07/2026 17:48 110 3 369 106",
+                "VAT Code Excl Vat VAT",
+                "A 20.00% 9.49 1.90",
+                "Z 0.00% 29.47 0.00",
+                "**** TOTAL(EXCL VAT) 38.96",
+                "VAT Amount 1.90",
+                "TOTAL NUMBER OF ITEMS SOLD = 5",
+                "Savings: £1.00 1 Coupon(s)",
+            ),
+            emptyList(),
+        )
+
+        assertEquals("COSTCO WHOLESALE", result.merchantName)
+        assertEquals("2026-07-16", result.purchasedAt)
+        // Every description row is rejoined with the code/quantity/price row printed below it.
+        assertEquals(
+            listOf(
+                "WATERMELON EACH 705",
+                "KS AA BURGERS 91158",
+                "GILLETTE GEL 6X200 352431",
+                "IRC HASS AVOCADOS 668527",
+                "HASS AVOCADOS 239 K",
+            ),
+            result.lineItems.map { it.description },
+        )
+        assertEquals(listOf(549, 1_999, 949, -100, 499), result.lineItems.map { it.lineTotalMinor })
+        assertTrue(result.lineItems.all { it.quantity == 1.0 })
+        // TOTAL(EXCL VAT) is the subtotal and TOTAL(INCL VAT) the total, not VAT amounts.
+        assertEquals(ReceiptTotals(3_896, 190, 4_086), result.totals)
+        assertTrue(result.validation.isValid)
+    }
+
+    @Test
     fun `keeps promotional lines as evidence without matching them to products`() = runBlocking {
         val result = extractor.extract(
             ocrResult(
@@ -346,6 +495,32 @@ class RuleBasedReceiptExtractorTest {
         assertEquals(rawLine, item.rawText)
         assertTrue(LineItemIssue.NO_PRODUCT_MATCH in item.issues)
         assertTrue(result.needsReview)
+    }
+
+    @Test
+    fun `reads the printed transaction date in common UK formats`() {
+        assertEquals("2026-07-30", purchasedAt("30/07/2026 20:12"))
+        assertEquals("2026-08-12", purchasedAt("12.08.26 18:32"))
+        assertEquals("2026-08-12", purchasedAt("12-08-2026"))
+        assertEquals("2026-08-12", purchasedAt("12 AUG 2026"))
+        assertEquals("2026-08-12", purchasedAt("Date: 12Aug26 Till 4"))
+        assertEquals("2026-08-12", purchasedAt("12 August 2026"))
+    }
+
+    @Test
+    fun `first printed date wins and implausible dates are skipped`() {
+        assertEquals("2026-07-30", purchasedAt("30/07/2026 09:10", "31/07/2026"))
+        // An impossible calendar date is not a transaction date.
+        assertNull(purchasedAt("31/02/26"))
+        assertNull(purchasedAt("99/99/9999"))
+        // A time or a year outside this century is not a transaction date.
+        assertNull(purchasedAt("18:32"))
+        assertNull(purchasedAt("12/08/1926"))
+        assertNull(purchasedAt("BREAD £1.25", "TOTAL £1.25"))
+    }
+
+    private fun purchasedAt(vararg lines: String): String? = runBlocking {
+        extractor.extract(ocrResult("SHOP", *lines), emptyList()).purchasedAt
     }
 
     @Test

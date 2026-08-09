@@ -110,6 +110,7 @@ class DefaultReceiptRepository @Inject constructor(
             receipts.applyExtraction(
                 receiptId = receiptId,
                 merchantId = extraction.merchantId,
+                purchasedAt = extraction.purchasedAt,
                 subtotalMinor = extraction.subtotalMinor,
                 taxMinor = extraction.taxMinor,
                 totalMinor = extraction.totalMinor,

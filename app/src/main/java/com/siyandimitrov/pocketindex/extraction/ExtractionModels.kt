@@ -109,6 +109,8 @@ data class ReceiptValidation(
 data class ExtractionResult(
     val rawOcrText: String,
     val merchantName: String?,
+    /** Transaction date printed on the receipt as YYYY-MM-DD, or null when none was readable. */
+    val purchasedAt: String? = null,
     val lineItems: List<ExtractedLineItem>,
     val totals: ReceiptTotals,
     val validation: ReceiptValidation,

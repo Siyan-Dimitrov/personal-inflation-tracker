@@ -23,6 +23,8 @@ data class ExtractedLineItem(
 
 data class ReceiptExtraction(
     val merchantId: Long?,
+    /** Transaction date read from the receipt; null keeps the date recorded at scan time. */
+    val purchasedAt: String? = null,
     val subtotalMinor: Long?,
     val taxMinor: Long?,
     val totalMinor: Long,
