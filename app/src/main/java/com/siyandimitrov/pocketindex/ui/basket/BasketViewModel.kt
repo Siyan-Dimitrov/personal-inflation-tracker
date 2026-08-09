@@ -47,6 +47,8 @@ data class BasketProductUi(
     val categoryName: String,
     val unitType: UnitType,
     val observationCount: Int,
+    /** Times this product appeared on a confirmed receipt or bill; manual price checks excluded. */
+    val purchaseCount: Int,
     val latestObservedAt: String?,
     val currentUnitPriceMicros: Double?,
     val isFresh: Boolean,
@@ -276,6 +278,7 @@ private fun buildBasketUiState(
             categoryName = relation.category.name,
             unitType = relation.product.unitType,
             observationCount = history.size,
+            purchaseCount = history.count { it.source != ObservationSource.MANUAL },
             latestObservedAt = latestDate,
             currentUnitPriceMicros = merchantCarryForward
                 .map { it.unitPriceMicros.toDouble() }
@@ -288,7 +291,10 @@ private fun buildBasketUiState(
             isFixedBasketEligible = baseObservations.size >= 2 ||
                 baseObservations.any { it.source == ObservationSource.BILL },
         )
-    }.sortedBy { it.name.lowercase() }
+    }.sortedWith(
+        // Most-bought products first, so the everyday basket sits at the top of the catalogue.
+        compareByDescending(BasketProductUi::purchaseCount).thenBy { it.name.lowercase() },
+    )
 
     val selectedRelation = products.firstOrNull { it.product.id == draft.selectedProductId }
     val selectedDetail = selectedRelation?.let { relation ->
