@@ -38,6 +38,29 @@ class FuzzyProductMatcherTest {
     }
 
     @Test
+    fun `normaliser expands till abbreviations and drops own-label prefixes and item codes`() {
+        assertEquals("semi skimmed milk", ReceiptTextNormaliser.normalise("JS S/SKM MLK 1.136L"))
+        assertEquals("olive oil", ReceiptTextNormaliser.normalise("96716 KS OLIVE OIL 2L"))
+        assertEquals("fairtrade banana ls", ReceiptTextNormaliser.normalise("JS FAIRTRD BANANA LS"))
+    }
+
+    @Test
+    fun `a brand prefixed description matches the plain product name`() {
+        val candidates = listOf(
+            ProductCandidate(1, "Whole Milk"),
+            ProductCandidate(2, "Coconut Milk"),
+        )
+
+        val branded = FuzzyProductMatcher().rank("CRAVENDALE WHOLE MILK 2L", candidates)
+        assertEquals(1L, branded.first().productId)
+        assertTrue(branded.first().confidence > FuzzyProductMatcher.REVIEW_CONFIDENCE)
+
+        // "milk" alone must not swallow coconut milk: the more specific name wins.
+        val coconut = FuzzyProductMatcher().rank("KTC COCONUT MILK 400ML", candidates)
+        assertEquals(2L, coconut.first().productId)
+    }
+
+    @Test
     fun `best match rejects unrelated candidates`() {
         val match = FuzzyProductMatcher().bestMatch(
             rawDescription = "WASHING UP LIQUID",
