@@ -157,11 +157,7 @@ private fun Headline(
     visibleSeries: List<IndexPoint>,
 ) {
     val rate = dashboard.headlineRate
-    val displayedPercent = if (range == InflationChartRange.ALL) {
-        rate?.percent
-    } else {
-        rangeChangePercent(visibleSeries)
-    }
+    val displayedPercent = displayedRangePercent(visibleSeries, range, rate?.percent)
     val availableMonths = (visibleSeries.size - 1).coerceAtLeast(0)
     Column {
         Text(
@@ -206,6 +202,11 @@ private fun Headline(
         }
         Text(
             text = when {
+                range != InflationChartRange.ALL && availableMonths < (range.months ?: 0) ->
+                    "Your index has $availableMonths month" +
+                        (if (availableMonths == 1) "" else "s") +
+                        " of history so far; the ${range.periodLabel} change appears " +
+                        "once it spans that long."
                 range != InflationChartRange.ALL && visibleSeries.size >= 2 ->
                     "Change from ${visibleSeries.first().asOf.asMonthYear()} " +
                         "to ${visibleSeries.last().asOf.asMonthYear()}."

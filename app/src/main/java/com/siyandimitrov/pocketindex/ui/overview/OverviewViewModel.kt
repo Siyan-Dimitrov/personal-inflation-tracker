@@ -52,7 +52,8 @@ enum class InflationChartRange(
     ONE_MONTH(1, "1M", "1 month"),
     SIX_MONTHS(6, "6M", "6 months"),
     ONE_YEAR(12, "1Y", "1 year"),
-    ALL(null, "All", "All history"),
+    FIVE_YEARS(60, "5Y", "5 years"),
+    ALL(null, "Max", "All history"),
     ;
 
     val preferenceValue: Int
@@ -170,4 +171,18 @@ internal fun rangeChangePercent(series: List<IndexPoint>): Double? {
     val first = series.first().index
     if (first == 0.0) return null
     return series.last().index / first * 100.0 - 100.0
+}
+
+/**
+ * The score shown for a chart range. A fixed range only earns a score once the index actually
+ * spans it; two monthly points must not present themselves as a six-month change.
+ */
+internal fun displayedRangePercent(
+    visibleSeries: List<IndexPoint>,
+    range: InflationChartRange,
+    headlinePercent: Double?,
+): Double? {
+    val months = range.months ?: return headlinePercent
+    if (visibleSeries.size - 1 < months) return null
+    return rangeChangePercent(visibleSeries)
 }
