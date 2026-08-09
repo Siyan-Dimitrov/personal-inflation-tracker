@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siyandimitrov.pocketindex.domain.EpochDay
+import com.siyandimitrov.pocketindex.domain.HeadlineRate
 import com.siyandimitrov.pocketindex.domain.HeadlineRateKind
 import com.siyandimitrov.pocketindex.domain.IndexPoint
 import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculation
@@ -118,16 +119,16 @@ fun OverviewScreen(
                     currentState.chartRange,
                 )
                 item {
+                    ChartRangeSelector(
+                        selected = currentState.chartRange,
+                        onSelected = viewModel::selectChartRange,
+                    )
+                }
+                item {
                     Headline(
                         dashboard = dashboard,
                         range = currentState.chartRange,
                         visibleSeries = visibleSeries,
-                    )
-                }
-                item {
-                    ChartRangeSelector(
-                        selected = currentState.chartRange,
-                        onSelected = viewModel::selectChartRange,
                     )
                 }
                 item { IndexChart(visibleSeries) }
@@ -157,7 +158,7 @@ private fun Headline(
     visibleSeries: List<IndexPoint>,
 ) {
     val rate = dashboard.headlineRate
-    val displayedPercent = displayedRangePercent(visibleSeries, range, rate?.percent)
+    val displayedPercent = displayedRangePercent(visibleSeries, range)
     val availableMonths = (visibleSeries.size - 1).coerceAtLeast(0)
     Column {
         Text(
@@ -182,22 +183,12 @@ private fun Headline(
             )
             StatusPill(
                 text = when {
-                    range != InflationChartRange.ALL && availableMonths > 0 -> {
-                        if (availableMonths < (range.months ?: availableMonths)) {
-                            "${availableMonths}M available"
-                        } else {
-                            range.periodLabel
-                        }
-                    }
-                    rate?.kind == HeadlineRateKind.YEAR_ON_YEAR -> "Year on year"
-                    rate?.kind == HeadlineRateKind.ANNUALISED_EARLY_ESTIMATE -> "Early estimate"
-                    else -> "Building history"
+                    range == InflationChartRange.ALL -> "All history"
+                    availableMonths > 0 && availableMonths < (range.months ?: 0) ->
+                        "${availableMonths}M available"
+                    else -> range.periodLabel
                 },
-                tone = when {
-                    range != InflationChartRange.ALL -> StatusTone.Neutral
-                    rate?.kind == HeadlineRateKind.YEAR_ON_YEAR -> StatusTone.Success
-                    else -> StatusTone.Attention
-                },
+                tone = StatusTone.Neutral,
             )
         }
         Text(
@@ -207,13 +198,10 @@ private fun Headline(
                         (if (availableMonths == 1) "" else "s") +
                         " of history so far; the ${range.periodLabel} change appears " +
                         "once it spans that long."
-                range != InflationChartRange.ALL && visibleSeries.size >= 2 ->
+                visibleSeries.size >= 2 ->
                     "Change from ${visibleSeries.first().asOf.asMonthYear()} " +
-                        "to ${visibleSeries.last().asOf.asMonthYear()}."
-                rate?.kind == HeadlineRateKind.YEAR_ON_YEAR ->
-                    "Change since ${rate.comparison.asOf.asMonthYear()}"
-                rate?.kind == HeadlineRateKind.ANNUALISED_EARLY_ESTIMATE ->
-                    "Annualised from ${rate.comparison.asOf.asMonthYear()}; this will settle as history grows."
+                        "to ${visibleSeries.last().asOf.asMonthYear()}." +
+                        annualisedNote(rate)
                 else -> "A second monthly point is needed before a rate can be shown."
             },
             style = MaterialTheme.typography.bodyMedium,
@@ -668,6 +656,15 @@ private fun ScanButton(
 @Composable
 private fun Double.changeColor(): Color =
     if (this < 0.0) MaterialTheme.colorScheme.secondary else InflationColor
+
+/** The projection lives in the small print; the headline number is always the period's change. */
+private fun annualisedNote(rate: HeadlineRate?): String = when (rate?.kind) {
+    HeadlineRateKind.YEAR_ON_YEAR ->
+        " Year on year: ${rate.percent.asSignedPercent()}."
+    HeadlineRateKind.ANNUALISED_EARLY_ESTIMATE ->
+        " Roughly ${rate.percent.asSignedPercent()} a year at this pace (early estimate)."
+    null -> ""
+}
 
 private fun Double.asSignedPercent(): String =
     "%+.1f%%".format(Locale.UK, this)

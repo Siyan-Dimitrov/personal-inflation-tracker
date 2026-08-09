@@ -25,23 +25,23 @@ class OverviewChartRangeTest {
         val twoMonths = series.take(2)
         assertEquals(
             rangeChangePercent(twoMonths),
-            displayedRangePercent(twoMonths, InflationChartRange.ONE_MONTH, headlinePercent = null),
+            displayedRangePercent(twoMonths, InflationChartRange.ONE_MONTH),
         )
-        assertNull(displayedRangePercent(twoMonths, InflationChartRange.SIX_MONTHS, headlinePercent = null))
-        assertNull(displayedRangePercent(twoMonths, InflationChartRange.ONE_YEAR, headlinePercent = null))
-        assertNull(displayedRangePercent(twoMonths, InflationChartRange.FIVE_YEARS, headlinePercent = null))
-        // The all-history view always shows the headline rate, however young the index is.
+        assertNull(displayedRangePercent(twoMonths, InflationChartRange.SIX_MONTHS))
+        assertNull(displayedRangePercent(twoMonths, InflationChartRange.ONE_YEAR))
+        assertNull(displayedRangePercent(twoMonths, InflationChartRange.FIVE_YEARS))
+        // The all-history view shows the plain change across the series, never annualised.
         assertEquals(
-            5.0,
-            displayedRangePercent(twoMonths, InflationChartRange.ALL, headlinePercent = 5.0),
+            rangeChangePercent(twoMonths),
+            displayedRangePercent(twoMonths, InflationChartRange.ALL),
         )
+        assertNull(displayedRangePercent(series.take(1), InflationChartRange.ALL))
         // Fifteen points span more than a year, so the one-year change is real.
         assertEquals(
             rangeChangePercent(visibleSeriesForRange(series, InflationChartRange.ONE_YEAR)),
             displayedRangePercent(
                 visibleSeriesForRange(series, InflationChartRange.ONE_YEAR),
                 InflationChartRange.ONE_YEAR,
-                headlinePercent = null,
             ),
         )
     }

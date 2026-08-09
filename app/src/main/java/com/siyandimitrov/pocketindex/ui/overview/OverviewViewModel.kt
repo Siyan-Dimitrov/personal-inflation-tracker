@@ -174,15 +174,15 @@ internal fun rangeChangePercent(series: List<IndexPoint>): Double? {
 }
 
 /**
- * The score shown for a chart range. A fixed range only earns a score once the index actually
- * spans it; two monthly points must not present themselves as a six-month change.
+ * The score shown for a chart range: the plain change across the visible series, never
+ * annualised — projections are subtitle material. A fixed range only earns a score once the
+ * index actually spans it; two monthly points must not present themselves as a six-month change.
  */
 internal fun displayedRangePercent(
     visibleSeries: List<IndexPoint>,
     range: InflationChartRange,
-    headlinePercent: Double?,
 ): Double? {
-    val months = range.months ?: return headlinePercent
-    if (visibleSeries.size - 1 < months) return null
+    val months = range.months
+    if (months != null && visibleSeries.size - 1 < months) return null
     return rangeChangePercent(visibleSeries)
 }
