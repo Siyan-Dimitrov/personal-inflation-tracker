@@ -31,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +60,8 @@ import com.siyandimitrov.pocketindex.data.local.UnitType
 import com.siyandimitrov.pocketindex.ui.components.StatusPill
 import com.siyandimitrov.pocketindex.ui.components.StatusTone
 import java.io.File
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 @Composable
 fun ReceiptInboxScreen(
@@ -131,6 +134,7 @@ fun ReceiptInboxScreen(
                     receipts = state.processing,
                     onReceiptSelected = onReceiptSelected,
                     onRetry = viewModel::retry,
+                    progressFor = viewModel::extractionProgress,
                 )
                 receiptSection(
                     title = "Needs review",
@@ -164,6 +168,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.receiptSection(
     receipts: List<ReceiptListItem>,
     onReceiptSelected: (Long) -> Unit,
     onRetry: (Long) -> Unit,
+    progressFor: ((Long) -> Flow<ExtractionProgress?>)? = null,
 ) {
     if (receipts.isEmpty()) return
     item(key = "header-$title") {
@@ -181,6 +186,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.receiptSection(
             receipt = receipt,
             onClick = { onReceiptSelected(receipt.id) },
             onRetry = { onRetry(receipt.id) },
+            progress = progressFor?.invoke(receipt.id),
         )
     }
 }
@@ -190,7 +196,10 @@ private fun ReceiptInboxRow(
     receipt: ReceiptListItem,
     onClick: () -> Unit,
     onRetry: () -> Unit,
+    progress: Flow<ExtractionProgress?>? = null,
 ) {
+    val extractionProgress by (progress ?: remember { flowOf(null) })
+        .collectAsStateWithLifecycle(initialValue = null)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -225,6 +234,19 @@ private fun ReceiptInboxRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 StatusPill(receipt.status.statusLabel(), receipt.status.statusTone())
+                extractionProgress?.let { stage ->
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        LinearProgressIndicator(
+                            progress = { stage.fraction },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            stage.step,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(receipt.totalMinor.asPounds(), style = MaterialTheme.typography.titleMedium)

@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.Operation
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.siyandimitrov.pocketindex.data.local.LocalDataLock
 import com.siyandimitrov.pocketindex.data.local.PocketIndexDatabase
 import com.siyandimitrov.pocketindex.data.local.ReceiptStatus
@@ -71,6 +72,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
 
             val imageFile = File(receipt.imagePath)
             check(imageFile.isFile) { "The original receipt image is unavailable." }
+            publishProgress(PROGRESS_READING, "Reading the printed text")
             val ocrResult = ocrService.recognise(Uri.fromFile(imageFile))
             val candidates = catalogRepository.observeProducts().first().map { productWithCategory ->
                 val product = productWithCategory.product
@@ -82,6 +84,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
                     baseUnit = product.unitType.toExtractionBaseUnit(),
                 )
             }
+            publishProgress(PROGRESS_PARSING, "Understanding the receipt")
             val extraction = extractor.extract(ocrResult, candidates)
             check(extraction.lineItems.isNotEmpty()) {
                 "No purchasable line items could be read from this receipt."
@@ -111,6 +114,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
                     },
                 )
             }
+            publishProgress(PROGRESS_SAVING, "Saving the receipt")
             val calculatedTotal = lineItems.sumOf(ExtractedLineItem::lineTotalMinor)
             // The merchant is created in its own transaction, so both writes are held under the
             // lock and re-check the receipt: a data reset during OCR must not leave a merchant
@@ -171,6 +175,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
             .map { it.description }
             .distinct()
         if (unmatched.isEmpty()) return emptyMap()
+        publishProgress(PROGRESS_SUGGESTING, "Matching products with AI")
         val candidatesByName = candidates.associateBy { it.canonicalName }
         return suggestionService.suggestProducts(unmatched, candidates.map { it.canonicalName })
             .mapNotNull { (description, name) ->
@@ -179,9 +184,25 @@ class ReceiptExtractionWorker @AssistedInject constructor(
             .toMap()
     }
 
+    /** Stage progress for the inbox: a single network or OCR call has no true percentage. */
+    private suspend fun publishProgress(fraction: Float, step: String) {
+        setProgress(
+            workDataOf(
+                KEY_PROGRESS_FRACTION to fraction,
+                KEY_PROGRESS_STEP to step,
+            ),
+        )
+    }
+
     companion object {
         const val KEY_RECEIPT_ID = "receipt_id"
         const val KEY_ERROR = "extraction_error"
+        const val KEY_PROGRESS_FRACTION = "progress_fraction"
+        const val KEY_PROGRESS_STEP = "progress_step"
+        private const val PROGRESS_READING = 0.15f
+        private const val PROGRESS_PARSING = 0.5f
+        private const val PROGRESS_SUGGESTING = 0.7f
+        private const val PROGRESS_SAVING = 0.9f
         private const val MISSING_RECEIPT_ID = -1L
         private const val MAX_MERCHANT_LENGTH = 80
         private const val MAX_ERROR_LENGTH = 240

@@ -1,8 +1,11 @@
 package com.siyandimitrov.pocketindex.ui.receipts
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.siyandimitrov.pocketindex.data.local.LocalDataLock
 import com.siyandimitrov.pocketindex.data.local.PocketIndexDatabase
 import com.siyandimitrov.pocketindex.data.local.PriceObservationEntity
@@ -13,10 +16,13 @@ import com.siyandimitrov.pocketindex.data.repository.CatalogRepository
 import com.siyandimitrov.pocketindex.data.repository.ObservationRepository
 import com.siyandimitrov.pocketindex.data.repository.ReceiptRepository
 import com.siyandimitrov.pocketindex.extraction.ReceiptExtractionScheduler
+import com.siyandimitrov.pocketindex.extraction.ReceiptExtractionWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +51,12 @@ data class ReceiptInboxUiState(
         get() = processing.size + needsReview.size + failed.size
 }
 
+/** The extraction stage a processing receipt has reached, for the inbox progress bar. */
+data class ExtractionProgress(
+    val fraction: Float,
+    val step: String,
+)
+
 private data class InboxTransientState(
     val message: String? = null,
 )
@@ -54,8 +66,30 @@ class ReceiptInboxViewModel @Inject constructor(
     receiptRepository: ReceiptRepository,
     private val database: PocketIndexDatabase,
     private val extractionScheduler: ReceiptExtractionScheduler,
+    @param:ApplicationContext private val context: Context,
 ) : ViewModel() {
     private val transient = MutableStateFlow(InboxTransientState())
+
+    /** Live stage progress for one receipt's extraction job, or null when it is not running. */
+    fun extractionProgress(receiptId: Long): Flow<ExtractionProgress?> =
+        WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWorkFlow(ReceiptExtractionWorker.uniqueName(receiptId))
+            .map { infos ->
+                infos.firstOrNull { it.state == WorkInfo.State.RUNNING }
+                    ?.progress
+                    ?.takeIf { it.getString(ReceiptExtractionWorker.KEY_PROGRESS_STEP) != null }
+                    ?.let { progress ->
+                        ExtractionProgress(
+                            fraction = progress.getFloat(
+                                ReceiptExtractionWorker.KEY_PROGRESS_FRACTION,
+                                0f,
+                            ),
+                            step = progress.getString(
+                                ReceiptExtractionWorker.KEY_PROGRESS_STEP,
+                            ).orEmpty(),
+                        )
+                    }
+            }
 
     val uiState: StateFlow<ReceiptInboxUiState> = combine(
         receiptRepository.observeReceipts()
