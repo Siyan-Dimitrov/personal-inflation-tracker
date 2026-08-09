@@ -56,6 +56,9 @@ interface ReceiptDao {
     @Query("DELETE FROM line_items WHERE receipt_id = :receiptId AND user_confirmed = 0")
     suspend fun deleteUnconfirmedLineItems(receiptId: Long)
 
+    @Query("DELETE FROM line_items WHERE id = :lineItemId AND receipt_id = :receiptId")
+    suspend fun deleteLineItem(receiptId: Long, lineItemId: Long): Int
+
     @Query(
         """
         UPDATE receipts

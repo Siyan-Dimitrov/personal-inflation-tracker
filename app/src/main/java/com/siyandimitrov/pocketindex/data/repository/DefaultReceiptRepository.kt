@@ -232,6 +232,22 @@ class DefaultReceiptRepository @Inject constructor(
         }
     }
 
+    override suspend fun deleteLineItem(receiptId: Long, lineItemId: Long) {
+        database.withTransaction {
+            val receipt = checkNotNull(receipts.getById(receiptId)) {
+                "Receipt $receiptId does not exist."
+            }
+            require(receipt.status != ReceiptStatus.CONFIRMED) {
+                "A confirmed receipt cannot be changed."
+            }
+            // Observations reference the line item; a stale one must not outlive its evidence.
+            observations.deleteForLineItem(lineItemId)
+            check(receipts.deleteLineItem(receiptId, lineItemId) == 1) {
+                "This receipt line no longer exists."
+            }
+        }
+    }
+
     override suspend fun deleteReceipt(receiptId: Long): String? = database.withTransaction {
         val receipt = receipts.getById(receiptId) ?: return@withTransaction null
         // Deleting a line item only nulls the observation's reference to it, so the

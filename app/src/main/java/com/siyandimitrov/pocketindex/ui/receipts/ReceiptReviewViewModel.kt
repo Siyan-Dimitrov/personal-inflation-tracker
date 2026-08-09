@@ -373,6 +373,15 @@ class ReceiptReviewViewModel @Inject constructor(
         updateEdit(item) { copy(excluded = excluded) }
     }
 
+    fun deleteLine(lineItemId: Long) {
+        val receiptId = uiState.value.receiptId ?: return
+        launchSaving {
+            receiptRepository.deleteLineItem(receiptId, lineItemId)
+            transient.update { it.copy(edits = it.edits - lineItemId) }
+            "Receipt line removed."
+        }
+    }
+
     fun saveProductForLine(
         lineItemId: Long,
         existingProductId: Long?,

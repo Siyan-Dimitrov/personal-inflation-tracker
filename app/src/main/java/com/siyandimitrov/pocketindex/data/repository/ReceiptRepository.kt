@@ -21,6 +21,11 @@ interface ReceiptRepository {
     )
 
     /**
+     * Deletes a single line item from an unconfirmed receipt, for example an OCR misread.
+     */
+    suspend fun deleteLineItem(receiptId: Long, lineItemId: Long)
+
+    /**
      * Deletes a receipt together with its line items and any price observations they produced.
      *
      * Returns the stored image path so the caller can remove the private image file, or null

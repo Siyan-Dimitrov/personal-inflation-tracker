@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Inventory2
@@ -34,6 +35,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -257,6 +259,7 @@ fun ReceiptsScreen(
                     onPackSizeChanged = { viewModel.updatePackSize(line.id, it) },
                     onExcludedChanged = { viewModel.setExcluded(line.id, it) },
                     onEditProduct = { productEditorLineId = line.id },
+                    onDelete = { viewModel.deleteLine(line.id) },
                 )
             }
 
@@ -504,8 +507,10 @@ private fun LiveReviewItemCard(
     onPackSizeChanged: (String) -> Unit,
     onExcludedChanged: (Boolean) -> Unit,
     onEditProduct: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     var productMenuExpanded by remember(item.id) { mutableStateOf(false) }
+    var showDeleteConfirmation by remember(item.id) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -564,7 +569,7 @@ private fun LiveReviewItemCard(
                     onCheckedChange = onExcludedChanged,
                     enabled = enabled,
                 )
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text("Exclude this line", style = MaterialTheme.typography.bodyLarge)
                     Text(
                         "Use for coupons, discounts, totals, bags, or other non-product text.",
@@ -572,6 +577,38 @@ private fun LiveReviewItemCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                IconButton(onClick = { showDeleteConfirmation = true }, enabled = enabled) {
+                    Icon(
+                        Icons.Rounded.DeleteOutline,
+                        contentDescription = "Delete this line",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            if (showDeleteConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirmation = false },
+                    title = { Text("Delete this line?") },
+                    text = {
+                        Text(
+                            "“${item.rawText}” will be removed from this receipt. " +
+                                "Use this for misread text; use Exclude for real " +
+                                "coupons and discounts, so the totals still reconcile.",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showDeleteConfirmation = false
+                                onDelete()
+                            },
+                        ) { Text("Delete") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirmation = false }) { Text("Cancel") }
+                    },
+                )
             }
 
             if (!item.excluded) {
