@@ -2,6 +2,7 @@ package com.siyandimitrov.pocketindex.data.repository
 
 import com.siyandimitrov.pocketindex.data.local.ObservationSource
 import com.siyandimitrov.pocketindex.data.local.ReceiptStatus
+import com.siyandimitrov.pocketindex.data.local.RecurringCadence
 import com.siyandimitrov.pocketindex.data.local.UnitType
 import kotlin.math.roundToLong
 
@@ -91,4 +92,15 @@ data class NewObservation(
 internal fun unitPriceMicros(shelfPriceMinor: Long, packSize: Double): Long {
     require(packSize > 0.0) { "Pack size must be greater than zero." }
     return ((shelfPriceMinor.toDouble() / packSize) * 1_000_000.0).roundToLong()
+}
+
+/**
+ * Months covered by one payment of a recurring bill. Stored as the bill observation's pack
+ * size, so its unit price is always per month and a change of cadence is not read as inflation.
+ */
+internal fun RecurringCadence.monthsPerPeriod(): Double = when (this) {
+    RecurringCadence.WEEKLY -> 12.0 / 52.0
+    RecurringCadence.MONTHLY -> 1.0
+    RecurringCadence.QUARTERLY -> 3.0
+    RecurringCadence.ANNUAL -> 12.0
 }

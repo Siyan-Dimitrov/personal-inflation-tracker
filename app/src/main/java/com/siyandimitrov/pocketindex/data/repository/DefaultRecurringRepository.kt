@@ -65,6 +65,7 @@ class DefaultRecurringRepository @Inject constructor(
                 billObservation(
                     productId = productId,
                     priceMinor = priceMinor,
+                    cadence = cadence,
                     observedAt = observedAt,
                 ),
             )
@@ -116,11 +117,14 @@ class DefaultRecurringRepository @Inject constructor(
             ) {
                 "Recurring bill $recurringItemId could not be updated."
             }
-            if (priceMinor != recurringItem.currentPriceMinor) {
+            // A cadence change alters the monthly-equivalent price just as an amount change
+            // does, so either one is a new observation.
+            if (priceMinor != recurringItem.currentPriceMinor || cadence != recurringItem.cadence) {
                 observations.insert(
                     billObservation(
                         productId = product.id,
                         priceMinor = priceMinor,
+                        cadence = cadence,
                         observedAt = observedAt,
                     ),
                 )
@@ -143,16 +147,21 @@ class DefaultRecurringRepository @Inject constructor(
         }
     }
 
+    /** The unit price is per month; the pack size records how many months one payment covers. */
     private fun billObservation(
         productId: Long,
         priceMinor: Long,
+        cadence: RecurringCadence,
         observedAt: String,
-    ) = PriceObservationEntity(
-        productId = productId,
-        observedAt = observedAt,
-        unitPriceMicros = unitPriceMicros(priceMinor, 1.0),
-        shelfPriceMinor = priceMinor,
-        packSize = 1.0,
-        source = ObservationSource.BILL,
-    )
+    ): PriceObservationEntity {
+        val months = cadence.monthsPerPeriod()
+        return PriceObservationEntity(
+            productId = productId,
+            observedAt = observedAt,
+            unitPriceMicros = unitPriceMicros(priceMinor, months),
+            shelfPriceMinor = priceMinor,
+            packSize = months,
+            source = ObservationSource.BILL,
+        )
+    }
 }
