@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.siyandimitrov.pocketindex.data.local.CategoryEntity
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
+import com.siyandimitrov.pocketindex.data.preferences.VisionSettings
 import com.siyandimitrov.pocketindex.data.repository.CatalogRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -24,6 +25,7 @@ data class InflationSettingsUiState(
     val baseWindowDays: Long = 56,
     val categories: List<CategoryWeightUi> = emptyList(),
     val validationMessage: String? = null,
+    val vision: VisionSettings = VisionSettings(),
 )
 
 @HiltViewModel
@@ -37,7 +39,8 @@ class InflationSettingsViewModel @Inject constructor(
         catalogRepository.observeCategories(),
         preferences.baseWindowDays,
         validationMessage,
-    ) { categories, baseWindowDays, message ->
+        preferences.visionSettingsFlow,
+    ) { categories, baseWindowDays, message, vision ->
         InflationSettingsUiState(
             baseWindowDays = baseWindowDays,
             categories = categories.map {
@@ -48,6 +51,7 @@ class InflationSettingsViewModel @Inject constructor(
                 )
             },
             validationMessage = message,
+            vision = vision,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -58,6 +62,22 @@ class InflationSettingsViewModel @Inject constructor(
     fun setBaseWindowDays(days: Long) {
         preferences.setBaseWindowDays(days)
         validationMessage.value = null
+    }
+
+    /** Returns a message when the address is unusable; an empty address switches AI reading off. */
+    fun saveVisionSettings(serverUrl: String, apiKey: String, model: String): String? {
+        val url = serverUrl.trim()
+        if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
+            return "The server address must start with http:// or https://."
+        }
+        preferences.setVisionSettings(
+            VisionSettings(
+                serverUrl = url,
+                apiKey = apiKey,
+                model = model.ifBlank { VisionSettings.DEFAULT_MODEL },
+            ),
+        )
+        return null
     }
 
     fun setCategoryWeight(categoryId: Long, percentText: String) {

@@ -11,6 +11,29 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 
+/**
+ * Where receipt photos are sent for AI reading. Ollama's hosted service is the default and
+ * needs an API key; a PC on the home network (`http://192.168.0.9:11434`) needs none. An empty
+ * [serverUrl] keeps scanning fully on-device.
+ */
+data class VisionSettings(
+    val serverUrl: String = DEFAULT_SERVER_URL,
+    val apiKey: String = "",
+    val model: String = DEFAULT_MODEL,
+) {
+    val isCloud: Boolean
+        get() = serverUrl.contains("ollama.com", ignoreCase = true)
+
+    /** The hosted service rejects unauthenticated calls, so without a key nothing is sent. */
+    val isEnabled: Boolean
+        get() = serverUrl.isNotBlank() && (!isCloud || apiKey.isNotBlank())
+
+    companion object {
+        const val DEFAULT_SERVER_URL = "https://ollama.com"
+        const val DEFAULT_MODEL = "qwen3.5:cloud"
+    }
+}
+
 @Singleton
 class InflationPreferences @Inject constructor(
     @ApplicationContext context: Context,
@@ -41,6 +64,36 @@ class InflationPreferences @Inject constructor(
         awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }.distinctUntilChanged()
 
+    /** Reactive copy for the settings screen; extraction reads [visionSettings] directly. */
+    val visionSettingsFlow: Flow<VisionSettings> = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key in VISION_KEYS) trySend(visionSettings)
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        trySend(visionSettings)
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
+    val visionSettings: VisionSettings
+        get() = VisionSettings(
+            // Only an address the user never touched falls back to the default: a cleared
+            // field is stored as "" and means off.
+            serverUrl = preferences.getString(KEY_VISION_SERVER_URL, VisionSettings.DEFAULT_SERVER_URL)
+                .orEmpty(),
+            apiKey = preferences.getString(KEY_VISION_API_KEY, null).orEmpty(),
+            model = preferences.getString(KEY_VISION_MODEL, null)
+                ?.takeIf(String::isNotBlank)
+                ?: VisionSettings.DEFAULT_MODEL,
+        )
+
+    fun setVisionSettings(settings: VisionSettings) {
+        preferences.edit()
+            .putString(KEY_VISION_SERVER_URL, settings.serverUrl.trim().trimEnd('/'))
+            .putString(KEY_VISION_API_KEY, settings.apiKey.trim())
+            .putString(KEY_VISION_MODEL, settings.model.trim())
+            .apply()
+    }
+
     fun setBaseWindowDays(days: Long) {
         require(days in MIN_BASE_WINDOW_DAYS..MAX_BASE_WINDOW_DAYS) {
             "Base window must be between 2 and 26 weeks."
@@ -67,6 +120,9 @@ class InflationPreferences @Inject constructor(
         preferences.edit()
             .remove(KEY_BASE_WINDOW_DAYS)
             .remove(KEY_CHART_RANGE_MONTHS)
+            .remove(KEY_VISION_SERVER_URL)
+            .remove(KEY_VISION_API_KEY)
+            .remove(KEY_VISION_MODEL)
             .apply()
     }
 
@@ -75,6 +131,10 @@ class InflationPreferences @Inject constructor(
         const val KEY_BASE_WINDOW_DAYS = "base_window_days"
         const val KEY_CHART_RANGE_MONTHS = "chart_range_months"
         const val KEY_DEMO_SEED_BLOCKED = "demo_seed_blocked"
+        const val KEY_VISION_SERVER_URL = "vision_server_url"
+        const val KEY_VISION_API_KEY = "vision_api_key"
+        const val KEY_VISION_MODEL = "vision_model"
+        val VISION_KEYS = setOf(KEY_VISION_SERVER_URL, KEY_VISION_API_KEY, KEY_VISION_MODEL)
         const val DEFAULT_CHART_RANGE_MONTHS = 6
         const val MIN_BASE_WINDOW_DAYS = 14L
         const val MAX_BASE_WINDOW_DAYS = 182L

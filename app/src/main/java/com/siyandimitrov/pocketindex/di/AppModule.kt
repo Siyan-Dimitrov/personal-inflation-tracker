@@ -14,6 +14,8 @@ import com.siyandimitrov.pocketindex.extraction.MlKitReceiptOcrService
 import com.siyandimitrov.pocketindex.extraction.ReceiptExtractor
 import com.siyandimitrov.pocketindex.extraction.ReceiptOcrService
 import com.siyandimitrov.pocketindex.extraction.RuleBasedReceiptExtractor
+import com.siyandimitrov.pocketindex.extraction.VisionFirstReceiptOcrService
+import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
 import com.siyandimitrov.pocketindex.suggestions.GeminiProductSuggestionService
 import com.siyandimitrov.pocketindex.suggestions.ProductSuggestionService
 import dagger.Module
@@ -63,7 +65,11 @@ object AppModule {
     @Singleton
     fun provideReceiptOcrService(
         @ApplicationContext context: Context,
-    ): ReceiptOcrService = MlKitReceiptOcrService(context)
+        preferences: InflationPreferences,
+    ): ReceiptOcrService = VisionFirstReceiptOcrService(
+        preferences = preferences,
+        fallback = MlKitReceiptOcrService(context),
+    )
 
     @Provides
     @Singleton

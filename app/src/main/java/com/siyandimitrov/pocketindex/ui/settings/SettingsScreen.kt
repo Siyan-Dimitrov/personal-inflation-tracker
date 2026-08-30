@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ElectricBolt
@@ -48,10 +49,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siyandimitrov.pocketindex.data.local.RecurringCadence
+import com.siyandimitrov.pocketindex.data.preferences.VisionSettings
 
 private data class RecurringBill(
     val source: RecurringBillUi,
@@ -76,6 +79,19 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var editingCategoryWeight by remember { mutableStateOf<CategoryWeightUi?>(null) }
     var showMethodology by remember { mutableStateOf(false) }
     var showResetConfirmation by remember { mutableStateOf(false) }
+    var showVisionEditor by remember { mutableStateOf(false) }
+
+    if (showVisionEditor) {
+        VisionEditorDialog(
+            settings = inflationState.vision,
+            onDismiss = { showVisionEditor = false },
+            onSave = { url, key, model ->
+                val error = inflationViewModel.saveVisionSettings(url, key, model)
+                if (error == null) showVisionEditor = false
+                error
+            },
+        )
+    }
     val displayBills = state.bills.map { bill ->
         RecurringBill(
             source = bill,
@@ -298,6 +314,47 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         item {
             Text(
+                text = "Receipt scanning",
+                modifier = Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+            )
+        }
+
+        item {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showVisionEditor = true }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text("AI receipt reading", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = inflationState.vision.statusLabel(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text("›", style = MaterialTheme.typography.titleLarge)
+                }
+            }
+        }
+
+        item {
+            Text(
                 text = "Data & privacy",
                 modifier = Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.titleLarge,
@@ -498,6 +555,76 @@ private fun IndexSettingsCard(
             }
         }
     }
+}
+
+private fun VisionSettings.statusLabel(): String = when {
+    serverUrl.isBlank() -> "Off — receipts are read on this phone only"
+    isCloud && apiKey.isBlank() -> "Ollama cloud · add your API key to turn on"
+    isCloud -> "Ollama cloud · $model"
+    else -> "${serverUrl.removePrefix("http://").removePrefix("https://")} · $model"
+}
+
+@Composable
+private fun VisionEditorDialog(
+    settings: VisionSettings,
+    onDismiss: () -> Unit,
+    /** Returns a validation message to show, or null once saved. */
+    onSave: (serverUrl: String, apiKey: String, model: String) -> String?,
+) {
+    var serverUrl by remember { mutableStateOf(settings.serverUrl) }
+    var apiKey by remember { mutableStateOf(settings.apiKey) }
+    var model by remember { mutableStateOf(settings.model) }
+    var message by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI receipt reading") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Sends each receipt photo to an Ollama server for reading, then checks the lines add up to the printed total before trusting them. Ollama's hosted service (https://ollama.com) needs the API key from your ollama.com account; your own PC on the home network (http://192.168.0.9:11434) needs no key. Clear the address to keep everything on this phone.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = serverUrl,
+                    onValueChange = { serverUrl = it },
+                    label = { Text("Server address") },
+                    placeholder = { Text("https://ollama.com") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text("API key (cloud only)") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = { model = it },
+                    label = { Text("Model") },
+                    placeholder = { Text(VisionSettings.DEFAULT_MODEL) },
+                    singleLine = true,
+                )
+                message?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { message = onSave(serverUrl, apiKey, model) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable
