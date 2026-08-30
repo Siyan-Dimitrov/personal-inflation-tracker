@@ -10,15 +10,19 @@ import com.siyandimitrov.pocketindex.domain.IndexPoint
 import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculation
 import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculator
 import com.siyandimitrov.pocketindex.domain.InflationDashboardInput
+import com.siyandimitrov.pocketindex.domain.MerchantId
+import com.siyandimitrov.pocketindex.domain.MerchantIndex
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Date
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 
 sealed interface OverviewUiState {
     data object Loading : OverviewUiState
@@ -37,7 +41,12 @@ sealed interface OverviewUiState {
     data class Ready(
         val dashboard: InflationDashboardCalculation.Ready,
         val chartRange: InflationChartRange,
-    ) : OverviewUiState
+        /** The shop whose index the chart shows; null shows the headline basket. */
+        val selectedMerchantId: MerchantId? = null,
+    ) : OverviewUiState {
+        val selectedMerchant: MerchantIndex?
+            get() = selectedMerchantId?.let { id -> dashboard.merchants.firstOrNull { it.merchantId == id } }
+    }
 
     data class Error(
         val explanation: String,
@@ -71,18 +80,23 @@ class OverviewViewModel @Inject constructor(
     adapter: InflationRepositoryAdapter,
     private val preferences: InflationPreferences,
 ) : ViewModel() {
+    // Session-only: the shop filter is a way of looking at the chart, not a setting.
+    private val selectedMerchantId = MutableStateFlow<MerchantId?>(null)
+
     val uiState = combine(
         adapter.observeDashboardInput(),
         preferences.baseWindowDays,
         preferences.chartRangeMonths,
-    ) { input, baseWindowDays, chartRangeMonths ->
-        Triple(input, baseWindowDays, chartRangeMonths)
-    }.mapLatest { (input, baseWindowDays, chartRangeMonths) ->
+        selectedMerchantId,
+    ) { input, baseWindowDays, chartRangeMonths, merchantId ->
+        OverviewInputs(input, baseWindowDays, chartRangeMonths, merchantId)
+    }.mapLatest { inputs ->
         calculateOverviewState(
-            input = input,
+            input = inputs.input,
             asOf = EpochDay(Math.floorDiv(Date().time, MILLIS_PER_DAY)),
-            configuration = IndexConfiguration(baseWindowDays = baseWindowDays),
-            chartRange = InflationChartRange.fromPreference(chartRangeMonths),
+            configuration = IndexConfiguration(baseWindowDays = inputs.baseWindowDays),
+            chartRange = InflationChartRange.fromPreference(inputs.chartRangeMonths),
+            selectedMerchantId = inputs.selectedMerchantId,
         )
     }.catch { throwable ->
         emit(
@@ -106,6 +120,18 @@ class OverviewViewModel @Inject constructor(
         preferences.setChartRangeMonths(range.preferenceValue)
     }
 
+    /** Tapping the selected shop again returns the chart to the headline basket. */
+    fun toggleMerchant(merchantId: MerchantId) {
+        selectedMerchantId.update { current -> if (current == merchantId) null else merchantId }
+    }
+
+    private data class OverviewInputs(
+        val input: InflationDashboardInput,
+        val baseWindowDays: Long,
+        val chartRangeMonths: Int,
+        val selectedMerchantId: MerchantId?,
+    )
+
     private companion object {
         const val MILLIS_PER_DAY = 86_400_000L
     }
@@ -116,6 +142,7 @@ internal fun calculateOverviewState(
     asOf: EpochDay,
     configuration: IndexConfiguration,
     chartRange: InflationChartRange = InflationChartRange.SIX_MONTHS,
+    selectedMerchantId: MerchantId? = null,
 ): OverviewUiState {
     if (input.products.isEmpty()) {
         return OverviewUiState.Empty(
@@ -146,7 +173,15 @@ internal fun calculateOverviewState(
                 }
 
                 is InflationDashboardCalculation.Ready -> {
-                    OverviewUiState.Ready(calculation, chartRange)
+                    OverviewUiState.Ready(
+                        dashboard = calculation,
+                        chartRange = chartRange,
+                        // A shop that lost its rate (say, after a receipt was deleted) must not
+                        // leave the chart pointing at a series that no longer exists.
+                        selectedMerchantId = selectedMerchantId?.takeIf { id ->
+                            calculation.merchants.any { it.merchantId == id && it.series != null }
+                        },
+                    )
                 }
             }
         },

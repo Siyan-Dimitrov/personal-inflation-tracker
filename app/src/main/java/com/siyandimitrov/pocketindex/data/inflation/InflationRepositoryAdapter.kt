@@ -44,6 +44,7 @@ class InflationRepositoryAdapter @Inject constructor(
             categories = categories,
             merchantIds = merchants.mapTo(hashSetOf()) { it.id },
         )
+        val merchantNames = merchants.associate { MerchantId(it.id) to it.name }
         val domainProducts = rows.products.map { row ->
             Product(
                 id = ProductId(row.product.id),
@@ -82,6 +83,7 @@ class InflationRepositoryAdapter @Inject constructor(
             categoryWeightOverrides = rows.categories.mapNotNull { category ->
                 category.expenditureWeight?.let { CategoryId(category.id) to it }
             }.toMap(),
+            merchantNames = merchantNames,
         )
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,6 +47,9 @@ import com.siyandimitrov.pocketindex.domain.HeadlineRate
 import com.siyandimitrov.pocketindex.domain.HeadlineRateKind
 import com.siyandimitrov.pocketindex.domain.IndexPoint
 import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculation
+import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculator
+import com.siyandimitrov.pocketindex.domain.MerchantId
+import com.siyandimitrov.pocketindex.domain.MerchantIndex
 import com.siyandimitrov.pocketindex.domain.ProductContribution
 import com.siyandimitrov.pocketindex.ui.components.CoverageRing
 import com.siyandimitrov.pocketindex.ui.components.InflationColor
@@ -118,6 +122,7 @@ fun OverviewScreen(
                     dashboard.fixedSeries,
                     currentState.chartRange,
                 )
+                val selectedMerchant = currentState.selectedMerchant
                 item {
                     ChartRangeSelector(
                         selected = currentState.chartRange,
@@ -131,7 +136,25 @@ fun OverviewScreen(
                         visibleSeries = visibleSeries,
                     )
                 }
-                item { IndexChart(visibleSeries) }
+                item {
+                    IndexChart(
+                        visible = selectedMerchant?.series
+                            ?.let { visibleSeriesForRange(it, currentState.chartRange) }
+                            ?: visibleSeries,
+                        title = selectedMerchant?.let { "Fixed-basket index · ${it.name}" }
+                            ?: "Fixed-basket index",
+                    )
+                }
+                if (dashboard.merchants.isNotEmpty()) {
+                    item {
+                        ShopExplanation(
+                            merchants = dashboard.merchants,
+                            range = currentState.chartRange,
+                            selectedMerchantId = currentState.selectedMerchantId,
+                            onToggle = viewModel::toggleMerchant,
+                        )
+                    }
+                }
                 item { CoverageCard(dashboard) }
                 item { CategoryExplanation(dashboard) }
                 item { ProductExplanation(dashboard.productContributions) }
@@ -254,10 +277,10 @@ private fun ChartRangeSelector(
  * reset zeroes the chart instead of removing it.
  */
 @Composable
-private fun IndexChart(visible: List<IndexPoint>) {
+private fun IndexChart(visible: List<IndexPoint>, title: String = "Fixed-basket index") {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            text = "Fixed-basket index",
+            text = title,
             style = MaterialTheme.typography.titleMedium,
         )
         if (visible.size >= 2) {
@@ -348,6 +371,91 @@ private fun CoverageCard(dashboard: InflationDashboardCalculation.Ready) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * One row per shop with its own index over the selected range. A row without a rate says how
+ * many products qualified so the user knows what a few more receipts there would unlock.
+ */
+@Composable
+private fun ShopExplanation(
+    merchants: List<MerchantIndex>,
+    range: InflationChartRange,
+    selectedMerchantId: MerchantId?,
+    onToggle: (MerchantId) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("By shop", style = MaterialTheme.typography.titleLarge)
+        Text(
+            text = "Each shop's own prices only, over the ${range.periodLabel.lowercase()} range. Tap a shop to show it on the chart.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        MetricSurface {
+            Column {
+                merchants.forEachIndexed { index, merchant ->
+                    val percent = merchant.series?.let { series ->
+                        displayedRangePercent(visibleSeriesForRange(series, range), range)
+                    }
+                    val selected = merchant.merchantId == selectedMerchantId
+                    Surface(
+                        onClick = { onToggle(merchant.merchantId) },
+                        enabled = merchant.series != null,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Storefront,
+                                contentDescription = null,
+                                tint = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(merchant.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    text = when {
+                                        merchant.series == null ->
+                                            "${merchant.basketProductCount} of " +
+                                                "${InflationDashboardCalculator.MINIMUM_MERCHANT_PRODUCTS} " +
+                                                "products needed in the base window"
+                                        percent == null -> "Not enough history for this range"
+                                        else -> "${merchant.basketProductCount} products · " +
+                                            "${merchant.observationCount} prices"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                text = percent?.asSignedPercent() ?: "Not enough data",
+                                style = if (percent == null) {
+                                    MaterialTheme.typography.bodySmall
+                                } else {
+                                    MaterialTheme.typography.titleMedium
+                                },
+                                color = percent?.changeColor()
+                                    ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (index < merchants.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
         }
     }
 }

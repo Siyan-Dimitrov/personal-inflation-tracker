@@ -11,6 +11,7 @@ data class InflationDashboardInput(
     val productNames: Map<ProductId, String>,
     val categoryNames: Map<CategoryId, String>,
     val categoryWeightOverrides: Map<CategoryId, Double> = emptyMap(),
+    val merchantNames: Map<MerchantId, String> = emptyMap(),
 )
 
 sealed interface InflationDashboardCalculation {
@@ -33,8 +34,23 @@ sealed interface InflationDashboardCalculation {
         val staleProducts: List<StaleProduct>,
         val categories: List<CategoryContribution>,
         val productContributions: List<ProductContribution>,
+        val merchants: List<MerchantIndex>,
     ) : InflationDashboardCalculation
 }
+
+/**
+ * One shop's own fixed-basket index, built from that merchant's observations alone so no other
+ * shop's prices are averaged in. [series] is null when fewer than
+ * [InflationDashboardCalculator.MINIMUM_MERCHANT_PRODUCTS] products qualified at that shop during
+ * the base window — a one- or two-product index is too noisy to present as a rate.
+ */
+data class MerchantIndex(
+    val merchantId: MerchantId,
+    val name: String,
+    val observationCount: Int,
+    val basketProductCount: Int,
+    val series: List<IndexPoint>?,
+)
 
 data class CategoryContribution(
     val categoryId: CategoryId,
@@ -66,6 +82,7 @@ data class StaleProduct(
  * to their domain ids. All monetary and index arithmetic remains delegated to the core engine.
  */
 object InflationDashboardCalculator {
+    const val MINIMUM_MERCHANT_PRODUCTS = 3
     private const val CHAIN_INTERVAL_DAYS = 365L
     private const val MILLIS_PER_DAY = 86_400_000L
 
@@ -211,8 +228,58 @@ object InflationDashboardCalculator {
             staleProducts = staleProducts,
             categories = categories,
             productContributions = productContributions,
+            merchants = merchantIndices(
+                input = input,
+                configuration = configuration,
+                baseWindow = baseWindow,
+                fixedDates = fixedDates,
+            ),
         )
     }
+
+    /**
+     * A separate fixed basket per merchant over the same base window and monthly dates as the
+     * headline, so the shop cards line up with the main chart. Every shop with an observation is
+     * listed so the user can see why one has no rate yet.
+     */
+    private fun merchantIndices(
+        input: InflationDashboardInput,
+        configuration: IndexConfiguration,
+        baseWindow: BaseWindow,
+        fixedDates: List<EpochDay>,
+    ): List<MerchantIndex> = input.observations
+        .filter { it.merchantId != null }
+        .groupBy { checkNotNull(it.merchantId) }
+        .map { (merchantId, merchantObservations) ->
+            val merchantInput = input.copy(observations = merchantObservations)
+            val eligibleProducts = eligibleProductIds(merchantInput, baseWindow)
+            val series = if (eligibleProducts.size < MINIMUM_MERCHANT_PRODUCTS) {
+                null
+            } else {
+                runCatching {
+                    PersonalInflationCalculator(configuration).buildFixedBasket(
+                        products = input.products,
+                        observations = merchantObservations,
+                        baseWindow = baseWindow,
+                        categoryWeightOverrides = overridesForEligibleBasket(
+                            input = merchantInput,
+                            eligibleProducts = eligibleProducts,
+                        ),
+                    ).series(fixedDates).map { IndexPoint(it.asOf, it.headlineIndex) }
+                }.getOrNull()
+            }
+            MerchantIndex(
+                merchantId = merchantId,
+                name = input.merchantNames[merchantId] ?: "Shop ${merchantId.value}",
+                observationCount = merchantObservations.size,
+                basketProductCount = eligibleProducts.size,
+                series = series,
+            )
+        }
+        .sortedWith(
+            compareByDescending<MerchantIndex> { it.observationCount }
+                .thenBy { it.name.lowercase() },
+        )
 
     private fun chainedSeriesOrNull(
         input: InflationDashboardInput,
