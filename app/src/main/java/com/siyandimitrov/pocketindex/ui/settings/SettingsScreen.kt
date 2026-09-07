@@ -1,5 +1,6 @@
 package com.siyandimitrov.pocketindex.ui.settings
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ElectricBolt
 import androidx.compose.material.icons.rounded.FileDownload
@@ -47,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -390,6 +393,59 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         )
                     }
                     Text("›", style = MaterialTheme.typography.titleLarge)
+                }
+            }
+        }
+
+        item {
+            val context = LocalContext.current
+            val report = dataState.crashReport
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = report != null) {
+                        val send = Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_SUBJECT, "Pocket Index crash log")
+                            .putExtra(Intent.EXTRA_TEXT, report?.text)
+                        context.startActivity(Intent.createChooser(send, "Share crash log"))
+                    },
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.BugReport,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "Share crash log",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = when (report?.crashCount) {
+                                null -> "Reading…"
+                                0 -> "No crashes recorded since the last clear"
+                                1 -> "1 crash recorded"
+                                else -> "${report.crashCount} crashes recorded"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(
+                        onClick = dataViewModel::clearCrashLog,
+                        enabled = (report?.crashCount ?: 0) > 0,
+                    ) {
+                        Text("Clear")
+                    }
                 }
             }
         }

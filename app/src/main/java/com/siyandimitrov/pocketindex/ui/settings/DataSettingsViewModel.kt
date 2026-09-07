@@ -8,6 +8,8 @@ import androidx.work.await
 import com.siyandimitrov.pocketindex.data.local.LocalDataLock
 import com.siyandimitrov.pocketindex.data.local.PocketIndexDatabase
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
+import com.siyandimitrov.pocketindex.diagnostics.CrashLog
+import com.siyandimitrov.pocketindex.diagnostics.CrashReport
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -25,6 +27,7 @@ data class DataSettingsUiState(
     val isResetting: Boolean = false,
     val message: String? = null,
     val isError: Boolean = false,
+    val crashReport: CrashReport? = null,
 )
 
 @HiltViewModel
@@ -37,13 +40,31 @@ class DataSettingsViewModel @Inject constructor(
     private val mutableUiState = MutableStateFlow(DataSettingsUiState())
     val uiState: StateFlow<DataSettingsUiState> = mutableUiState.asStateFlow()
 
+    init {
+        loadCrashReport()
+    }
+
+    fun clearCrashLog() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { CrashLog.clear(context) }
+            loadCrashReport()
+        }
+    }
+
+    private fun loadCrashReport() {
+        viewModelScope.launch {
+            val report = withContext(Dispatchers.IO) { CrashLog.report(context) }
+            mutableUiState.update { it.copy(crashReport = report) }
+        }
+    }
+
     /**
      * Returns the app to a first-launch state: no receipts, products, observations, bills, or
      * settings, and no demo history restored on the next launch.
      */
     fun resetData() {
         if (mutableUiState.value.isResetting) return
-        mutableUiState.value = DataSettingsUiState(isResetting = true)
+        mutableUiState.update { it.copy(isResetting = true, message = null, isError = false) }
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -66,13 +87,16 @@ class DataSettingsViewModel @Inject constructor(
                     }
                 }
             }.onSuccess {
-                mutableUiState.value = DataSettingsUiState(message = "All local data reset.")
+                mutableUiState.update { it.copy(isResetting = false, message = "All local data reset.") }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
-                mutableUiState.value = DataSettingsUiState(
-                    message = error.message ?: "The data could not be reset.",
-                    isError = true,
-                )
+                mutableUiState.update {
+                    it.copy(
+                        isResetting = false,
+                        message = error.message ?: "The data could not be reset.",
+                        isError = true,
+                    )
+                }
             }
         }
     }

@@ -7,6 +7,7 @@ import com.siyandimitrov.pocketindex.data.demo.DemoDataSeeder
 import com.siyandimitrov.pocketindex.data.local.ReceiptStatus
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
 import com.siyandimitrov.pocketindex.data.repository.ReceiptRepository
+import com.siyandimitrov.pocketindex.diagnostics.CrashLog
 import com.siyandimitrov.pocketindex.extraction.ReceiptExtractionScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -42,6 +43,7 @@ class PocketIndexApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         if (BuildConfig.DEBUG) {
             applicationScope.launch {
                 if (!preferences.isDemoSeedBlocked) {
