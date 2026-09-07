@@ -43,17 +43,18 @@ Steps on the phone:
 4. Fix the bill amount/cadence (or the observation/pack size) — the index
    recalculates immediately.
 
-## 2. Random crashes on the phone (unresolved — needs device logs)
+## 2. Random crashes on the phone (unresolved — crash log now built in)
 
 Not reproducible on the emulator: all screens exercised plus 2,100 random
-monkey events with zero crashes/ANRs on the current build. Requires the real
-device:
+monkey events with zero crashes/ANRs. No data cable, so since 2026-09-06 the
+app records its own crashes (`diagnostics/CrashLog`): every uncaught exception
+is appended to `files/crash.log`, and on Android 11+ the report also lists the
+system's exit reasons (ANR with trace, low memory, native crash).
 
-1. Phone: Settings → About phone → tap "Build number" 7× → Developer options →
-   enable USB debugging; plug into the PC.
-2. Pull stored traces of past crashes (no repro needed):
-   `adb logcat -d -b crash` and `adb shell dumpsys dropbox --print data_app_crash`.
-3. Fix whatever the stack trace names.
+1. Install the 2026-09-06 build on the phone and use it until it crashes.
+2. Phone: Settings → Data & privacy → "Share crash log" → send the text to
+   yourself (Drive, Messages, email) and paste it here.
+3. Fix whatever the stack trace names; "Clear" on the card empties the file.
 
 ## 3. Per-shop inflation — built 2026-08-30, needs a look on the phone
 
@@ -86,15 +87,56 @@ Ollama's hosted service:
   the Costco receipt through the rules parser).
 - Settings: server address (default `https://ollama.com`, i.e. AI reading is
   on by default once a key is entered — without one nothing is sent), API
-  key (cloud only, entered in the app), model (default `qwen3.5:cloud`).
+  key (cloud only, entered in the app), model (default `gemma4:31b` since
+  2026-09-07: the only vision-capable model on the ollama.com Free tier).
   Cleared address = fully on-device. Reset restores the defaults.
 - Manifest allows cleartext HTTP (the PC on the LAN is plain http).
 
-**To use it on the phone** (not yet done):
+**Tested on the emulator 2026-09-07 with the user's ollama.com key** and the
+Costco photo `PXL_20260906_204527793.jpg` (£96.84, 11 items, 3 IRC rebates):
+
+- Two bugs fixed: ollama.com answers HTTP 403 to Android's default
+  `Dalvik/...` user agent (now sends `PocketIndex/<version>`), and the hosted
+  model ignores the schema `format` and wraps its JSON in a Markdown fence
+  (parser now strips it). Before the fixes every scan silently fell back to
+  ML Kit, which is why it looked "instant" on the phone.
+- `qwen3.5:cloud` (old default) needs a paid plan. Free tier as of today:
+  gpt-oss, glm, deepseek, kimi, minimax, nemotron, mistral-large and
+  `gemma4:31b`; only gemma4 accepts images. Reads in 3–9 s.
+- gemma4:31b on the scanner's crop: merchant, total and all 14 lines right
+  including the rebate signs, but every run differs despite temperature 0:
+  Costco's "Savings £3.90" summary added as a fourth discount, the ex-VAT
+  subtotal misread, VAT left null, an item number used as a description, the
+  year read as 2022. So the all-or-nothing check was replaced the same day:
+
+**Robust reading, built 2026-09-07** (`chooseVisionReading` in the codec,
+retry loop in `VisionFirstReceiptOcrService`):
+
+1. Repairs tried before rejecting a read: drop a trailing discount equal to
+   the other discounts combined (the savings summary); ignore a stated
+   subtotal when lines + VAT meet the printed total. A repair only counts if
+   it makes the read reconcile.
+2. One retry against the model when the first read does not add up.
+3. If nothing reconciles, the closest raw read is kept anyway and the receipt
+   goes to review with the gap shown, instead of falling back to ML Kit —
+   the user's call: ML Kit on the same photo produced a garbled merchant name
+   and a £27.24 total for a £96.84 receipt. ML Kit now runs only when the
+   model cannot be reached or parsed.
+4. Never silent: `receipts.read_by` (DB v2, migration 1→2) records e.g.
+   "AI (gemma4:31b), lines £11.65 short of the printed total" or "On device;
+   AI read failed: HTTP 403", shown in the inbox row and the review card.
+
+Emulator result: two scans kept for review with the VAT gap noted (model
+returned VAT null on the clipped crop), the third reconciled outright.
+Known remaining slip: the year sometimes comes back as 2022 for a 2026
+receipt; the review screen shows it, nothing guards it yet.
+- The ML Kit scanner's auto-crop clipped the right edge of the photo (last
+  digit of the VAT amount); a framed live photo should not have this.
+
+**To use it on the phone**:
 
 - Ollama cloud: sign in at ollama.com → API key; enter `https://ollama.com`,
-  the key, model `qwen3.5:cloud` (Free tier should cover a few receipts a
-  week; Pro is $20/mo).
+  the key, model `gemma4:31b` (Free tier).
 - Own PC: run Ollama with `OLLAMA_HOST=0.0.0.0`, allow TCP 11434 in the
   Windows firewall, enter `http://192.168.0.9:11434`, no key, model
   `huihui_ai/qwen3.5-abliterated:9b` (or a pulled official vision tag).

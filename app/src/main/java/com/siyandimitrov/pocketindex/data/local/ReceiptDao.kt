@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 interface ReceiptDao {
     @Query(
         """
-        SELECT r.id, r.purchased_at, r.total_minor, r.currency, r.status,
+        SELECT r.id, r.purchased_at, r.total_minor, r.currency, r.status, r.read_by,
                m.name AS merchant_name, COUNT(li.id) AS line_item_count
         FROM receipts r
         LEFT JOIN merchants m ON m.id = r.merchant_id
@@ -24,7 +24,7 @@ interface ReceiptDao {
 
     @Query(
         """
-        SELECT r.id, r.purchased_at, r.total_minor, r.currency, r.status,
+        SELECT r.id, r.purchased_at, r.total_minor, r.currency, r.status, r.read_by,
                m.name AS merchant_name, COUNT(li.id) AS line_item_count
         FROM receipts r
         LEFT JOIN merchants m ON m.id = r.merchant_id
@@ -68,6 +68,7 @@ interface ReceiptDao {
             tax_minor = :taxMinor,
             total_minor = :totalMinor,
             ocr_text = :ocrText,
+            read_by = :readBy,
             status = :status
         WHERE id = :receiptId
         """,
@@ -80,6 +81,7 @@ interface ReceiptDao {
         taxMinor: Long?,
         totalMinor: Long,
         ocrText: String,
+        readBy: String?,
         status: ReceiptStatus,
     )
 

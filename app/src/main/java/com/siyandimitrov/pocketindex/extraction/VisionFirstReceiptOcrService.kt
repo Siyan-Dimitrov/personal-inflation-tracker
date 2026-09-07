@@ -5,11 +5,13 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import com.siyandimitrov.pocketindex.BuildConfig
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -26,23 +28,40 @@ class VisionFirstReceiptOcrService(
 
     override suspend fun recognise(imageUri: Uri): OcrResult {
         val settings = preferences.visionSettings
-        if (!settings.isEnabled) return fallback.recognise(imageUri)
-        val receipt = withContext(Dispatchers.IO) {
-            runCatching {
-                val encoded = encodeForUpload(File(requireNotNull(imageUri.path)))
-                val body = buildVisionRequestBody(settings.model, encoded)
-                parseVisionReceipt(post(settings.serverUrl, settings.apiKey, body))
-            }.onFailure { Log.w(TAG, "Vision read failed; using on-device OCR.", it) }
-                .getOrNull()
-        }
-        return when {
-            receipt == null -> fallback.recognise(imageUri)
-            !receipt.reconciles() -> {
-                Log.w(TAG, "Vision read did not reconcile with its total; using on-device OCR.")
-                fallback.recognise(imageUri)
+        if (!settings.isEnabled) return fallback.recognise(imageUri).copy(readBy = ON_DEVICE)
+        val attempts = mutableListOf<VisionReceipt>()
+        var failure: String? = null
+        withContext(Dispatchers.IO) {
+            val body = runCatching {
+                buildVisionRequestBody(settings.model, encodeForUpload(File(requireNotNull(imageUri.path))))
+            }.getOrElse { failure = it.message ?: it.javaClass.simpleName; return@withContext }
+            // The hosted models answer differently to the same photo, so one more try is often
+            // all a reading that does not add up needs.
+            for (attempt in 1..MAX_ATTEMPTS) {
+                val reading = runCatching { post(settings.serverUrl, settings.apiKey, body) }
+                    .onFailure { failure = it.message ?: it.javaClass.simpleName }
+                    .getOrNull()
+                    ?.let { response ->
+                        parseVisionReceipt(response)
+                            .also { if (it == null) failure = "the reply could not be parsed" }
+                    }
+                if (reading != null) {
+                    attempts += reading
+                    if (reading.repairs().any { it.reconciles() }) break
+                }
             }
-            else -> receipt.toOcrResult()
         }
+        val chosen = chooseVisionReading(attempts)
+        if (chosen == null) {
+            Log.w(TAG, "Vision read failed ($failure); using on-device OCR.")
+            return fallback.recognise(imageUri).copy(readBy = "$ON_DEVICE; AI read failed: $failure")
+        }
+        val gap = chosen.discrepancyMinor()?.takeIf { abs(it) > RECONCILE_TOLERANCE_MINOR }
+        if (gap != null) Log.w(TAG, "Vision read kept for review; lines are $gap pence off the total.")
+        return chosen.toOcrResult().copy(
+            readBy = "AI (${settings.model})" +
+                (gap?.let { ", lines £${abs(it).asPounds()} ${if (it < 0) "short of" else "over"} the printed total" } ?: ""),
+        )
     }
 
     private fun post(serverUrl: String, apiKey: String, body: String): String {
@@ -55,6 +74,8 @@ class VisionFirstReceiptOcrService(
             connection.readTimeout = READ_TIMEOUT_MILLIS
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
+            // ollama.com answers 403 to Android's default "Dalvik/..." user agent.
+            connection.setRequestProperty("User-Agent", "PocketIndex/${BuildConfig.VERSION_NAME}")
             if (apiKey.isNotBlank()) {
                 connection.setRequestProperty("Authorization", "Bearer $apiKey")
             }
@@ -93,7 +114,13 @@ class VisionFirstReceiptOcrService(
         const val TAG = "VisionReceiptOcr"
         const val CONNECT_TIMEOUT_MILLIS = 5_000
         const val READ_TIMEOUT_MILLIS = 180_000
+        const val MAX_ATTEMPTS = 2
+        const val RECONCILE_TOLERANCE_MINOR = 2
+        const val ON_DEVICE = "On device"
         const val MAX_EDGE_PIXELS = 1_600
         const val JPEG_QUALITY = 85
     }
 }
+
+private fun Int.asPounds(): String =
+    (if (this < 0) "-" else "") + "%d.%02d".format(java.util.Locale.ROOT, abs(this) / 100, abs(this) % 100)

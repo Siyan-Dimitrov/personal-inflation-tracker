@@ -34,6 +34,35 @@ data class VisionReceipt(
         return subtotal == null || tax == null || abs(subtotal + tax - total) <= toleranceMinor
     }
 
+    /** How far the lines are from the subtotal the totals imply; null without a printed total. */
+    fun discrepancyMinor(): Int? {
+        val total = totalMinor ?: return null
+        return lines.sumOf(VisionLine::lineTotalMinor) - (subtotalMinor ?: (total - (taxMinor ?: 0)))
+    }
+
+    /**
+     * This reading and the ways it is most often wrong, fixed: a trailing "Savings" row that
+     * merely sums the discounts already listed, and a misread subtotal when the lines plus VAT
+     * do meet the printed total.
+     */
+    fun repairs(): List<VisionReceipt> {
+        val variants = mutableListOf(this)
+        val last = lines.lastOrNull()
+        val otherDiscounts = lines.dropLast(1).filter { it.lineTotalMinor < 0 }
+        if (last != null && last.lineTotalMinor < 0 && otherDiscounts.isNotEmpty() &&
+            last.lineTotalMinor == otherDiscounts.sumOf(VisionLine::lineTotalMinor)
+        ) {
+            variants += copy(lines = lines.dropLast(1))
+        }
+        val total = totalMinor
+        val tax = taxMinor
+        if (subtotalMinor != null && total != null && tax != null) {
+            variants += variants.map { it.copy(subtotalMinor = null) }
+                .filter { abs(it.lines.sumOf(VisionLine::lineTotalMinor) + tax - total) <= 2 }
+        }
+        return variants
+    }
+
     /**
      * Re-expresses the reading as receipt text in the layout the deterministic parser handles
      * best, so product matching, pack sizes, promotions and totals all go through the existing
@@ -96,7 +125,8 @@ fun buildVisionRequestBody(model: String, imageBase64: String): String =
  */
 fun parseVisionReceipt(responseBody: String): VisionReceipt? = runCatching {
     val content = JSONObject(responseBody).getJSONObject("message").getString("content")
-    val json = JSONObject(content)
+    // Hosted models ignore the schema constraint and wrap the JSON in a Markdown fence.
+    val json = JSONObject(content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```"))
     val lines = json.getJSONArray("lines")
     VisionReceipt(
         merchant = json.optNullableString("merchant"),
@@ -128,13 +158,14 @@ private const val VISION_PROMPT =
         "subtotal_pence, tax_pence, total_pence: the printed subtotal, VAT and grand total as " +
         "integer pence, or null when not printed.\n" +
         "lines: every purchased item and every discount, coupon, saving, rebate or refund " +
-        "line, in order, with description copied exactly as printed, quantity, " +
+        "line, in order, with description copied exactly as printed (the item name, never an " +
+        "item number printed on the price line), quantity, " +
         "unit_price_pence and line_total_pence as integer pence, and is_discount. Set " +
         "is_discount true when the line takes money off: a minus sign before or after its " +
         "amount (for example \"2.00-\" or \"-2.00\"), or a coupon, saving, IRC or rebate " +
         "label. Every other line has is_discount false. Do not include subtotal, VAT, total, " +
-        "payment, change, loyalty points or VAT breakdown rows as lines. Never invent lines " +
-        "or amounts."
+        "payment, change, loyalty points or VAT breakdown rows as lines, nor a savings summary " +
+        "that repeats discounts already listed. Never invent lines or amounts."
 
 private fun receiptSchema(): JSONObject {
     fun nullable(type: String) = JSONObject().put("type", JSONArray().put(type).put("null"))
@@ -193,3 +224,15 @@ private fun Int.asPounds(): String =
 
 private fun Double.asQuantity(): String =
     if (this == Math.rint(this)) toInt().toString() else "%.3f".format(Locale.ROOT, this).trimEnd('0')
+
+/**
+ * The reading to trust out of one or more attempts at the same photo: the first that reconciles,
+ * with repairs allowed, else the attempt whose lines come closest to the printed total so the
+ * review screen can show the gap. Null only when nothing usable was read.
+ */
+fun chooseVisionReading(attempts: List<VisionReceipt>): VisionReceipt? =
+    attempts.flatMap(VisionReceipt::repairs).firstOrNull { it.reconciles() }
+        // A repair that does not make the reading add up is not applied: the review screen
+        // shows what the model actually read.
+        ?: attempts.filter { it.totalMinor != null && it.lines.isNotEmpty() }
+            .minByOrNull { abs(it.discrepancyMinor() ?: Int.MAX_VALUE) }

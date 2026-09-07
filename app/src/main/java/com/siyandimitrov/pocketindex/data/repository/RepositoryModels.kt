@@ -30,6 +30,7 @@ data class ReceiptExtraction(
     val taxMinor: Long?,
     val totalMinor: Long,
     val ocrText: String,
+    val readBy: String? = null,
     val status: ReceiptStatus,
     val lineItems: List<ExtractedLineItem>,
 )

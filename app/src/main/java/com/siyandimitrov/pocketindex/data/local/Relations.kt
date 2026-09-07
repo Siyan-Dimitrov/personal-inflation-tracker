@@ -54,6 +54,8 @@ data class ReceiptListItem(
     val totalMinor: Long,
     val currency: String,
     val status: ReceiptStatus,
+    @ColumnInfo(name = "read_by")
+    val readBy: String?,
     @ColumnInfo(name = "merchant_name")
     val merchantName: String?,
     @ColumnInfo(name = "line_item_count")

@@ -233,6 +233,13 @@ private fun ReceiptInboxRow(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                receipt.readBy?.let { readBy ->
+                    Text(
+                        readBy,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 StatusPill(receipt.status.statusLabel(), receipt.status.statusTone())
                 extractionProgress?.let { stage ->
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {

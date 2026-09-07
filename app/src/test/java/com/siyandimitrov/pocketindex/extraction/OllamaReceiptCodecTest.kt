@@ -80,6 +80,16 @@ class OllamaReceiptCodecTest {
     }
 
     @Test
+    fun `a Markdown code fence around the JSON is tolerated`() {
+        val envelope = JSONObject().put(
+            "message",
+            JSONObject().put("content", "```json\n{\"total_pence\":100,\"lines\":[]}\n```"),
+        ).toString()
+
+        assertEquals(100, assertNotNull(parseVisionReceipt(envelope)).totalMinor)
+    }
+
+    @Test
     fun `malformed responses and a date in the wrong shape are rejected`() {
         assertNull(parseVisionReceipt("not json"))
         assertNull(parseVisionReceipt("""{"message":{"content":"{\"total_pence\":1}"}}"""))
@@ -101,6 +111,38 @@ class OllamaReceiptCodecTest {
         assertFalse(costco.copy(totalMinor = null).reconciles())
         assertFalse(costco.copy(lines = emptyList()).reconciles())
         assertFalse(costco.copy(taxMinor = 400).reconciles())
+    }
+
+    @Test
+    fun `a trailing savings row that repeats the discounts is dropped by repair`() {
+        val savingsRow = VisionLine("Savings", 1.0, -600, -600)
+        val doubleCounted = costco.copy(lines = costco.lines + savingsRow)
+
+        assertFalse(doubleCounted.reconciles())
+        assertEquals(costco, chooseVisionReading(listOf(doubleCounted)))
+        // A final discount that is not the sum of the others is a real line and stays.
+        val realDiscount = costco.copy(lines = costco.lines + VisionLine("COUPON", 1.0, -50, -50))
+        assertEquals(realDiscount, chooseVisionReading(listOf(realDiscount)))
+    }
+
+    @Test
+    fun `a misread subtotal is ignored when the lines plus VAT meet the total`() {
+        val misread = costco.copy(subtotalMinor = 14307)
+
+        assertFalse(misread.reconciles())
+        assertEquals(costco.copy(subtotalMinor = null), chooseVisionReading(listOf(misread)))
+    }
+
+    @Test
+    fun `the closest reading is kept for review when none reconciles`() {
+        val farOff = costco.copy(lines = costco.lines.drop(3))
+        val nearlyRight = costco.copy(lines = costco.lines.drop(1))
+
+        val chosen = assertNotNull(chooseVisionReading(listOf(farOff, nearlyRight)))
+        assertEquals(nearlyRight, chosen)
+        assertEquals(-549, chosen.discrepancyMinor())
+        assertNull(chooseVisionReading(emptyList()))
+        assertNull(chooseVisionReading(listOf(costco.copy(totalMinor = null))))
     }
 
     @Test

@@ -9,6 +9,8 @@ package com.siyandimitrov.pocketindex.extraction
 data class OcrResult(
     val text: String,
     val lines: List<OcrLine>,
+    /** How the text was produced, in words for the receipt screens; null when unknown. */
+    val readBy: String? = null,
 )
 
 data class OcrLine(

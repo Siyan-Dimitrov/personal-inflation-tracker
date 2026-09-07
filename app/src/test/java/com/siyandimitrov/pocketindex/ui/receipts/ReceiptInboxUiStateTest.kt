@@ -15,6 +15,7 @@ class ReceiptInboxUiStateTest {
                 totalMinor = 100L + index,
                 currency = "GBP",
                 status = status,
+                readBy = null,
                 merchantName = "Merchant $index",
                 lineItemCount = index,
             )

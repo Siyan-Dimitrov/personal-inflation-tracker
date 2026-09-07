@@ -116,6 +116,7 @@ data class ReceiptReviewUiState(
     val isSaving: Boolean = false,
     val reconciliationValid: Boolean = false,
     val reconciliationDifferenceMinor: Long? = null,
+    val readBy: String? = null,
     val message: String? = null,
 ) {
     val totalMinor: Long?
@@ -312,6 +313,7 @@ class ReceiptReviewViewModel @Inject constructor(
                     abs(difference) <= 2L &&
                     headerReconciles,
                 reconciliationDifferenceMinor = difference,
+                readBy = receipt.readBy,
                 message = draft.message,
             )
         }

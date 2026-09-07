@@ -492,6 +492,13 @@ private fun ReconciliationCard(state: ReceiptReviewUiState) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            state.readBy?.let { readBy ->
+                Text(
+                    text = "Read by $readBy",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

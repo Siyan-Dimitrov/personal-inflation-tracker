@@ -135,6 +135,7 @@ class ReceiptExtractionWorker @AssistedInject constructor(
                         taxMinor = extraction.totals.taxMinor?.toLong(),
                         totalMinor = extraction.totals.totalMinor?.toLong() ?: calculatedTotal,
                         ocrText = extraction.rawOcrText,
+                        readBy = ocrResult.readBy,
                         status = ReceiptStatus.NEEDS_REVIEW,
                         lineItems = lineItems,
                     ),

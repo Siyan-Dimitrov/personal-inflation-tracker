@@ -124,6 +124,9 @@ data class ReceiptEntity(
     val imagePath: String,
     @ColumnInfo(name = "ocr_text")
     val ocrText: String? = null,
+    /** How the text was read (AI model or on device), shown on the receipt screens. */
+    @ColumnInfo(name = "read_by")
+    val readBy: String? = null,
     val status: ReceiptStatus = ReceiptStatus.PENDING,
     /** Unix epoch milliseconds. */
     @ColumnInfo(name = "created_at")

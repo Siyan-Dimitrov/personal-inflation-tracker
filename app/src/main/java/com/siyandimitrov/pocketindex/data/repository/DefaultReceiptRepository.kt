@@ -115,6 +115,7 @@ class DefaultReceiptRepository @Inject constructor(
                 taxMinor = extraction.taxMinor,
                 totalMinor = extraction.totalMinor,
                 ocrText = extraction.ocrText,
+                readBy = extraction.readBy,
                 status = extraction.status,
             )
             receipts.deleteUnconfirmedLineItems(receiptId)

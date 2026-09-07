@@ -30,7 +30,7 @@ data class VisionSettings(
 
     companion object {
         const val DEFAULT_SERVER_URL = "https://ollama.com"
-        const val DEFAULT_MODEL = "qwen3.5:cloud"
+        const val DEFAULT_MODEL = "gemma4:31b"
     }
 }
 

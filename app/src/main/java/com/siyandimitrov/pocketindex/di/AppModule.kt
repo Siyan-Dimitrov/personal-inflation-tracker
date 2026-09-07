@@ -37,7 +37,7 @@ object AppModule {
             context,
             PocketIndexDatabase::class.java,
             PocketIndexDatabase.DATABASE_NAME,
-        ).build()
+        ).addMigrations(PocketIndexDatabase.MIGRATION_1_2).build()
 
     @Provides
     fun provideReceiptDao(database: PocketIndexDatabase): ReceiptDao = database.receiptDao()
