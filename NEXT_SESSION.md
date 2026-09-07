@@ -140,9 +140,11 @@ nullable fields, `additionalProperties: false`), `Authorization: Bearer` with
 the user's pay-as-you-go key from platform.claude.com, roughly 1.5p per
 receipt. Same repair/retry/keep-for-review path as Ollama. A Pro/Max
 subscription cannot be used: Anthropic bills the API separately and offers no
-sign-in for third-party apps; purchased credits expire after a year. Not yet
-run against the real API (no key on the PC): the emulator only confirmed the
-request reaches api.anthropic.com and a 401 lands in the receipt's read-by note.
+sign-in for third-party apps; purchased credits expire after a year. Verified
+live 2026-09-07 with the user's key on the scanner crop: two runs, every line,
+rebate sign, subtotal, VAT, total and date right, both reconcile. About 44 s
+and 2,800 in / 1,600 out tokens per receipt (roughly 1.7p). The key lives only
+in the app's preferences, never in the repo.
 
 **To use it on the phone**:
 

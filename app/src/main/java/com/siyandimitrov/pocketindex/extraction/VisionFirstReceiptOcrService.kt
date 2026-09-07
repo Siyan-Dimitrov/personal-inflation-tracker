@@ -62,6 +62,7 @@ class VisionFirstReceiptOcrService(
         }
         val chosen = chooseVisionReading(attempts)
         if (chosen == null) {
+            if (failure == null) failure = "the reply held no usable receipt"
             Log.w(TAG, "Vision read failed ($failure); using on-device OCR.")
             return fallback.recognise(imageUri).copy(readBy = "$ON_DEVICE; AI read failed: $failure")
         }
