@@ -133,8 +133,21 @@ receipt; the review screen shows it, nothing guards it yet.
 - The ML Kit scanner's auto-crop clipped the right edge of the photo (last
   digit of the VAT amount); a framed live photo should not have this.
 
+**Claude is the first-line reader since 2026-09-07** (`ClaudeReceiptCodec`,
+provider chips in Settings → AI receipt reading). `claude-sonnet-5` via the
+Messages API with structured outputs (`output_config.format`, `anyOf` for
+nullable fields, `additionalProperties: false`), `Authorization: Bearer` with
+the user's pay-as-you-go key from platform.claude.com, roughly 1.5p per
+receipt. Same repair/retry/keep-for-review path as Ollama. A Pro/Max
+subscription cannot be used: Anthropic bills the API separately and offers no
+sign-in for third-party apps; purchased credits expire after a year. Not yet
+run against the real API (no key on the PC): the emulator only confirmed the
+request reaches api.anthropic.com and a 401 lands in the receipt's read-by note.
+
 **To use it on the phone**:
 
+- Claude: platform.claude.com → API key; Settings → AI receipt reading →
+  Claude chip → paste the key. Set a monthly spend cap in the Console.
 - Ollama cloud: sign in at ollama.com → API key; enter `https://ollama.com`,
   the key, model `gemma4:31b` (Free tier).
 - Own PC: run Ollama with `OLLAMA_HOST=0.0.0.0`, allow TCP 11434 in the

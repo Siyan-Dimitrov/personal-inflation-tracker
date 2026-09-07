@@ -11,12 +11,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 
+/** Which service reads receipt photos. Claude is first choice; Ollama the alternative. */
+enum class VisionProvider { CLAUDE, OLLAMA }
+
 /**
- * Where receipt photos are sent for AI reading. Ollama's hosted service is the default and
- * needs an API key; a PC on the home network (`http://192.168.0.9:11434`) needs none. An empty
- * [serverUrl] keeps scanning fully on-device.
+ * Where receipt photos are sent for AI reading. Claude (Anthropic's API) is the default and
+ * needs an API key. Ollama's hosted service also needs a key; a PC on the home network
+ * (`http://192.168.0.9:11434`) needs none. Claude without a key, or Ollama with an empty
+ * [serverUrl], keeps scanning fully on-device.
  */
 data class VisionSettings(
+    val provider: VisionProvider = VisionProvider.CLAUDE,
+    val claudeApiKey: String = "",
     val serverUrl: String = DEFAULT_SERVER_URL,
     val apiKey: String = "",
     val model: String = DEFAULT_MODEL,
@@ -24,11 +30,19 @@ data class VisionSettings(
     val isCloud: Boolean
         get() = serverUrl.contains("ollama.com", ignoreCase = true)
 
-    /** The hosted service rejects unauthenticated calls, so without a key nothing is sent. */
+    /** The hosted services reject unauthenticated calls, so without a key nothing is sent. */
     val isEnabled: Boolean
-        get() = serverUrl.isNotBlank() && (!isCloud || apiKey.isNotBlank())
+        get() = when (provider) {
+            VisionProvider.CLAUDE -> claudeApiKey.isNotBlank()
+            VisionProvider.OLLAMA -> serverUrl.isNotBlank() && (!isCloud || apiKey.isNotBlank())
+        }
+
+    /** The model the active provider will be asked for. */
+    val activeModel: String
+        get() = if (provider == VisionProvider.CLAUDE) CLAUDE_MODEL else model
 
     companion object {
+        const val CLAUDE_MODEL = "claude-sonnet-5"
         const val DEFAULT_SERVER_URL = "https://ollama.com"
         const val DEFAULT_MODEL = "gemma4:31b"
     }
@@ -76,6 +90,10 @@ class InflationPreferences @Inject constructor(
 
     val visionSettings: VisionSettings
         get() = VisionSettings(
+            provider = preferences.getString(KEY_VISION_PROVIDER, null)
+                ?.let { name -> VisionProvider.entries.firstOrNull { it.name == name } }
+                ?: VisionProvider.CLAUDE,
+            claudeApiKey = preferences.getString(KEY_VISION_CLAUDE_API_KEY, null).orEmpty(),
             // Only an address the user never touched falls back to the default: a cleared
             // field is stored as "" and means off.
             serverUrl = preferences.getString(KEY_VISION_SERVER_URL, VisionSettings.DEFAULT_SERVER_URL)
@@ -88,6 +106,8 @@ class InflationPreferences @Inject constructor(
 
     fun setVisionSettings(settings: VisionSettings) {
         preferences.edit()
+            .putString(KEY_VISION_PROVIDER, settings.provider.name)
+            .putString(KEY_VISION_CLAUDE_API_KEY, settings.claudeApiKey.trim())
             .putString(KEY_VISION_SERVER_URL, settings.serverUrl.trim().trimEnd('/'))
             .putString(KEY_VISION_API_KEY, settings.apiKey.trim())
             .putString(KEY_VISION_MODEL, settings.model.trim())
@@ -120,6 +140,8 @@ class InflationPreferences @Inject constructor(
         preferences.edit()
             .remove(KEY_BASE_WINDOW_DAYS)
             .remove(KEY_CHART_RANGE_MONTHS)
+            .remove(KEY_VISION_PROVIDER)
+            .remove(KEY_VISION_CLAUDE_API_KEY)
             .remove(KEY_VISION_SERVER_URL)
             .remove(KEY_VISION_API_KEY)
             .remove(KEY_VISION_MODEL)
@@ -131,10 +153,18 @@ class InflationPreferences @Inject constructor(
         const val KEY_BASE_WINDOW_DAYS = "base_window_days"
         const val KEY_CHART_RANGE_MONTHS = "chart_range_months"
         const val KEY_DEMO_SEED_BLOCKED = "demo_seed_blocked"
+        const val KEY_VISION_PROVIDER = "vision_provider"
+        const val KEY_VISION_CLAUDE_API_KEY = "vision_claude_api_key"
         const val KEY_VISION_SERVER_URL = "vision_server_url"
         const val KEY_VISION_API_KEY = "vision_api_key"
         const val KEY_VISION_MODEL = "vision_model"
-        val VISION_KEYS = setOf(KEY_VISION_SERVER_URL, KEY_VISION_API_KEY, KEY_VISION_MODEL)
+        val VISION_KEYS = setOf(
+            KEY_VISION_PROVIDER,
+            KEY_VISION_CLAUDE_API_KEY,
+            KEY_VISION_SERVER_URL,
+            KEY_VISION_API_KEY,
+            KEY_VISION_MODEL,
+        )
         const val DEFAULT_CHART_RANGE_MONTHS = 6
         const val MIN_BASE_WINDOW_DAYS = 14L
         const val MAX_BASE_WINDOW_DAYS = 182L

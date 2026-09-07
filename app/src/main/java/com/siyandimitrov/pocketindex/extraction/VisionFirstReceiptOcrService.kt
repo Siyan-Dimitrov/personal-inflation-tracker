@@ -7,6 +7,7 @@ import android.util.Base64
 import android.util.Log
 import com.siyandimitrov.pocketindex.BuildConfig
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
+import com.siyandimitrov.pocketindex.data.preferences.VisionProvider
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
@@ -32,17 +33,25 @@ class VisionFirstReceiptOcrService(
         val attempts = mutableListOf<VisionReceipt>()
         var failure: String? = null
         withContext(Dispatchers.IO) {
+            val claude = settings.provider == VisionProvider.CLAUDE
             val body = runCatching {
-                buildVisionRequestBody(settings.model, encodeForUpload(File(requireNotNull(imageUri.path))))
+                val encoded = encodeForUpload(File(requireNotNull(imageUri.path)))
+                if (claude) buildClaudeRequestBody(settings.activeModel, encoded) else buildVisionRequestBody(settings.model, encoded)
             }.getOrElse { failure = it.message ?: it.javaClass.simpleName; return@withContext }
+            val url = if (claude) CLAUDE_MESSAGES_URL else "${settings.serverUrl.trimEnd('/')}/api/chat"
+            val headers = if (claude) {
+                mapOf("Authorization" to "Bearer ${settings.claudeApiKey}", "anthropic-version" to CLAUDE_API_VERSION)
+            } else {
+                settings.apiKey.takeIf(String::isNotBlank)?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty()
+            }
             // The hosted models answer differently to the same photo, so one more try is often
             // all a reading that does not add up needs.
             for (attempt in 1..MAX_ATTEMPTS) {
-                val reading = runCatching { post(settings.serverUrl, settings.apiKey, body) }
+                val reading = runCatching { post(url, headers, body) }
                     .onFailure { failure = it.message ?: it.javaClass.simpleName }
                     .getOrNull()
                     ?.let { response ->
-                        parseVisionReceipt(response)
+                        (if (claude) parseClaudeReceipt(response) else parseVisionReceipt(response))
                             .also { if (it == null) failure = "the reply could not be parsed" }
                     }
                 if (reading != null) {
@@ -59,14 +68,13 @@ class VisionFirstReceiptOcrService(
         val gap = chosen.discrepancyMinor()?.takeIf { abs(it) > RECONCILE_TOLERANCE_MINOR }
         if (gap != null) Log.w(TAG, "Vision read kept for review; lines are $gap pence off the total.")
         return chosen.toOcrResult().copy(
-            readBy = "AI (${settings.model})" +
+            readBy = "AI (${settings.activeModel})" +
                 (gap?.let { ", lines £${abs(it).asPounds()} ${if (it < 0) "short of" else "over"} the printed total" } ?: ""),
         )
     }
 
-    private fun post(serverUrl: String, apiKey: String, body: String): String {
-        val connection = URL("${serverUrl.trimEnd('/')}/api/chat")
-            .openConnection() as HttpURLConnection
+    private fun post(url: String, headers: Map<String, String>, body: String): String {
+        val connection = URL(url).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "POST"
             connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
@@ -76,12 +84,12 @@ class VisionFirstReceiptOcrService(
             connection.setRequestProperty("Content-Type", "application/json")
             // ollama.com answers 403 to Android's default "Dalvik/..." user agent.
             connection.setRequestProperty("User-Agent", "PocketIndex/${BuildConfig.VERSION_NAME}")
-            if (apiKey.isNotBlank()) {
-                connection.setRequestProperty("Authorization", "Bearer $apiKey")
-            }
+            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             check(connection.responseCode == HttpURLConnection.HTTP_OK) {
-                "Vision server returned HTTP ${connection.responseCode}."
+                val detail = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }
+                    .getOrNull()?.trim()?.take(MAX_ERROR_DETAIL)
+                "HTTP ${connection.responseCode}" + (detail?.takeIf(String::isNotEmpty)?.let { ": $it" } ?: "")
             }
             connection.inputStream.bufferedReader().use { it.readText() }
         } finally {
@@ -115,6 +123,9 @@ class VisionFirstReceiptOcrService(
         const val CONNECT_TIMEOUT_MILLIS = 5_000
         const val READ_TIMEOUT_MILLIS = 180_000
         const val MAX_ATTEMPTS = 2
+        const val CLAUDE_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+        const val CLAUDE_API_VERSION = "2023-06-01"
+        const val MAX_ERROR_DETAIL = 160
         const val RECONCILE_TOLERANCE_MINOR = 2
         const val ON_DEVICE = "On device"
         const val MAX_EDGE_PIXELS = 1_600

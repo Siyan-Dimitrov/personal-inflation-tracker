@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siyandimitrov.pocketindex.data.local.RecurringCadence
+import com.siyandimitrov.pocketindex.data.preferences.VisionProvider
 import com.siyandimitrov.pocketindex.data.preferences.VisionSettings
 
 private data class RecurringBill(
@@ -88,8 +90,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         VisionEditorDialog(
             settings = inflationState.vision,
             onDismiss = { showVisionEditor = false },
-            onSave = { url, key, model ->
-                val error = inflationViewModel.saveVisionSettings(url, key, model)
+            onSave = { provider, claudeKey, url, key, model ->
+                val error = inflationViewModel.saveVisionSettings(provider, claudeKey, url, key, model)
                 if (error == null) showVisionEditor = false
                 error
             },
@@ -613,11 +615,17 @@ private fun IndexSettingsCard(
     }
 }
 
-private fun VisionSettings.statusLabel(): String = when {
-    serverUrl.isBlank() -> "Off — receipts are read on this phone only"
-    isCloud && apiKey.isBlank() -> "Ollama cloud · add your API key to turn on"
-    isCloud -> "Ollama cloud · $model"
-    else -> "${serverUrl.removePrefix("http://").removePrefix("https://")} · $model"
+private fun VisionSettings.statusLabel(): String = when (provider) {
+    VisionProvider.CLAUDE -> when {
+        claudeApiKey.isBlank() -> "Claude · add your Anthropic API key to turn on"
+        else -> "Claude · $activeModel"
+    }
+    VisionProvider.OLLAMA -> when {
+        serverUrl.isBlank() -> "Off — receipts are read on this phone only"
+        isCloud && apiKey.isBlank() -> "Ollama cloud · add your API key to turn on"
+        isCloud -> "Ollama cloud · $model"
+        else -> "${serverUrl.removePrefix("http://").removePrefix("https://")} · $model"
+    }
 }
 
 @Composable
@@ -625,8 +633,16 @@ private fun VisionEditorDialog(
     settings: VisionSettings,
     onDismiss: () -> Unit,
     /** Returns a validation message to show, or null once saved. */
-    onSave: (serverUrl: String, apiKey: String, model: String) -> String?,
+    onSave: (
+        provider: VisionProvider,
+        claudeApiKey: String,
+        serverUrl: String,
+        apiKey: String,
+        model: String,
+    ) -> String?,
 ) {
+    var provider by remember { mutableStateOf(settings.provider) }
+    var claudeApiKey by remember { mutableStateOf(settings.claudeApiKey) }
     var serverUrl by remember { mutableStateOf(settings.serverUrl) }
     var apiKey by remember { mutableStateOf(settings.apiKey) }
     var model by remember { mutableStateOf(settings.model) }
@@ -637,30 +653,60 @@ private fun VisionEditorDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Sends each receipt photo to an Ollama server for reading, then checks the lines add up to the printed total before trusting them. Ollama's hosted service (https://ollama.com) needs the API key from your ollama.com account; your own PC on the home network (http://192.168.0.9:11434) needs no key. Clear the address to keep everything on this phone.",
+                    "Sends each receipt photo to an AI model for reading, then checks the lines add up to the printed total. A read that does not add up still goes to review with the gap shown.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = { serverUrl = it },
-                    label = { Text("Server address") },
-                    placeholder = { Text("https://ollama.com") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("API key (cloud only)") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                )
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    label = { Text("Model") },
-                    placeholder = { Text(VisionSettings.DEFAULT_MODEL) },
-                    singleLine = true,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = provider == VisionProvider.CLAUDE,
+                        onClick = { provider = VisionProvider.CLAUDE },
+                        label = { Text("Claude") },
+                    )
+                    FilterChip(
+                        selected = provider == VisionProvider.OLLAMA,
+                        onClick = { provider = VisionProvider.OLLAMA },
+                        label = { Text("Ollama") },
+                    )
+                }
+                if (provider == VisionProvider.CLAUDE) {
+                    Text(
+                        "Anthropic's ${VisionSettings.CLAUDE_MODEL}, pay as you go with a key from platform.claude.com. Clear the key to keep everything on this phone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    OutlinedTextField(
+                        value = claudeApiKey,
+                        onValueChange = { claudeApiKey = it },
+                        label = { Text("Anthropic API key") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                } else {
+                    Text(
+                        "Ollama's hosted service (https://ollama.com) needs the API key from your ollama.com account; your own PC on the home network (http://192.168.0.9:11434) needs no key. Clear the address to keep everything on this phone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    OutlinedTextField(
+                        value = serverUrl,
+                        onValueChange = { serverUrl = it },
+                        label = { Text("Server address") },
+                        placeholder = { Text("https://ollama.com") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text("API key (cloud only)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = { model = it },
+                        label = { Text("Model") },
+                        placeholder = { Text(VisionSettings.DEFAULT_MODEL) },
+                        singleLine = true,
+                    )
+                }
                 message?.let {
                     Text(
                         text = it,
@@ -671,7 +717,7 @@ private fun VisionEditorDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { message = onSave(serverUrl, apiKey, model) }) {
+            TextButton(onClick = { message = onSave(provider, claudeApiKey, serverUrl, apiKey, model) }) {
                 Text("Save")
             }
         },

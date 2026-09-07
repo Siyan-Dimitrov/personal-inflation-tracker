@@ -124,7 +124,11 @@ fun buildVisionRequestBody(model: String, imageBase64: String): String =
  * a partial receipt: a half-read receipt would only fail reconciliation later anyway.
  */
 fun parseVisionReceipt(responseBody: String): VisionReceipt? = runCatching {
-    val content = JSONObject(responseBody).getJSONObject("message").getString("content")
+    JSONObject(responseBody).getJSONObject("message").getString("content")
+}.getOrNull()?.let(::parseVisionReceiptJson)
+
+/** The receipt JSON both services are asked for, as a [VisionReceipt]; null when malformed. */
+fun parseVisionReceiptJson(content: String): VisionReceipt? = runCatching {
     // Hosted models ignore the schema constraint and wrap the JSON in a Markdown fence.
     val json = JSONObject(content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```"))
     val lines = json.getJSONArray("lines")
@@ -151,7 +155,7 @@ fun parseVisionReceipt(responseBody: String): VisionReceipt? = runCatching {
     )
 }.getOrNull()
 
-private const val VISION_PROMPT =
+internal const val VISION_PROMPT =
     "This is a photo of a UK shop receipt. Read it and answer with JSON only.\n" +
         "merchant: the shop's name. date: the transaction date printed on the receipt as " +
         "YYYY-MM-DD (UK receipts print day first), or null.\n" +

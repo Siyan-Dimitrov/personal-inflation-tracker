@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.siyandimitrov.pocketindex.data.local.CategoryEntity
 import com.siyandimitrov.pocketindex.data.preferences.InflationPreferences
+import com.siyandimitrov.pocketindex.data.preferences.VisionProvider
 import com.siyandimitrov.pocketindex.data.preferences.VisionSettings
 import com.siyandimitrov.pocketindex.data.repository.CatalogRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -64,14 +65,25 @@ class InflationSettingsViewModel @Inject constructor(
         validationMessage.value = null
     }
 
-    /** Returns a message when the address is unusable; an empty address switches AI reading off. */
-    fun saveVisionSettings(serverUrl: String, apiKey: String, model: String): String? {
+    /**
+     * Returns a message when the Ollama address is unusable; an empty address switches Ollama
+     * off, an empty Claude key switches Claude off.
+     */
+    fun saveVisionSettings(
+        provider: VisionProvider,
+        claudeApiKey: String,
+        serverUrl: String,
+        apiKey: String,
+        model: String,
+    ): String? {
         val url = serverUrl.trim()
         if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
             return "The server address must start with http:// or https://."
         }
         preferences.setVisionSettings(
             VisionSettings(
+                provider = provider,
+                claudeApiKey = claudeApiKey,
                 serverUrl = url,
                 apiKey = apiKey,
                 model = model.ifBlank { VisionSettings.DEFAULT_MODEL },
