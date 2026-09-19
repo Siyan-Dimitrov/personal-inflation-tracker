@@ -3,6 +3,7 @@ package com.siyandimitrov.pocketindex.ui.overview
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +48,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.siyandimitrov.pocketindex.domain.CategoryId
 import com.siyandimitrov.pocketindex.domain.EpochDay
 import com.siyandimitrov.pocketindex.domain.HeadlineRate
 import com.siyandimitrov.pocketindex.domain.HeadlineRateKind
@@ -54,6 +58,8 @@ import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculator
 import com.siyandimitrov.pocketindex.domain.MerchantId
 import com.siyandimitrov.pocketindex.domain.MerchantIndex
 import com.siyandimitrov.pocketindex.domain.ProductContribution
+import com.siyandimitrov.pocketindex.domain.ProductId
+import com.siyandimitrov.pocketindex.ui.basket.BasketTarget
 import com.siyandimitrov.pocketindex.ui.components.CoverageRing
 import com.siyandimitrov.pocketindex.ui.components.InflationColor
 import com.siyandimitrov.pocketindex.ui.components.MiniLineChart
@@ -71,11 +77,16 @@ import kotlin.math.roundToInt
 fun OverviewScreen(
     isScanning: Boolean,
     onScanReceipt: () -> Unit,
+    onOpenBasket: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: OverviewViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val includeBills by viewModel.includeBills.collectAsStateWithLifecycle()
+    val openInBasket = { target: BasketTarget ->
+        viewModel.openInBasket(target)
+        onOpenBasket()
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -93,7 +104,13 @@ fun OverviewScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Pocket Index", style = MaterialTheme.typography.headlineLarge)
+                Text(
+                    text = "Pocket Index",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                ScanIconButton(isScanning = isScanning, onScanReceipt = onScanReceipt)
+                Spacer(Modifier.width(8.dp))
                 PrivacyChip()
             }
         }
@@ -163,8 +180,18 @@ fun OverviewScreen(
                     }
                 }
                 item { CoverageCard(dashboard) }
-                item { CategoryExplanation(dashboard) }
-                item { ProductExplanation(dashboard.productContributions) }
+                item {
+                    CategoryExplanation(
+                        dashboard = dashboard,
+                        onCategory = { id -> openInBasket(BasketTarget.Category(id.value)) },
+                    )
+                }
+                item {
+                    ProductExplanation(
+                        contributions = dashboard.productContributions,
+                        onProduct = { id -> openInBasket(BasketTarget.Product(id.value)) },
+                    )
+                }
                 if (dashboard.staleProducts.isNotEmpty()) {
                     item { StaleExplanation(dashboard) }
                 }
@@ -496,11 +523,14 @@ private fun ShopExplanation(
 }
 
 @Composable
-private fun CategoryExplanation(dashboard: InflationDashboardCalculation.Ready) {
+private fun CategoryExplanation(
+    dashboard: InflationDashboardCalculation.Ready,
+    onCategory: (CategoryId) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Why did it change?", style = MaterialTheme.typography.titleLarge)
         Text(
-            text = "Percentage-point contributions to the displayed headline. Weights come from your base spending unless overridden.",
+            text = "Percentage-point contributions to the displayed headline. Weights come from your base spending unless overridden. Tap a row to see its products.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -508,7 +538,9 @@ private fun CategoryExplanation(dashboard: InflationDashboardCalculation.Ready) 
             Column {
                 dashboard.categories.forEachIndexed { index, category ->
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                        modifier = Modifier
+                            .clickable { onCategory(category.categoryId) }
+                            .padding(horizontal = 16.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -551,7 +583,10 @@ private fun CategoryExplanation(dashboard: InflationDashboardCalculation.Ready) 
 }
 
 @Composable
-private fun ProductExplanation(contributions: List<ProductContribution>) {
+private fun ProductExplanation(
+    contributions: List<ProductContribution>,
+    onProduct: (ProductId) -> Unit,
+) {
     val positives = contributions.filter { it.contributionPercentagePoints > 0 }.take(3)
     val negatives = contributions
         .filter { it.contributionPercentagePoints < 0 }
@@ -565,7 +600,9 @@ private fun ProductExplanation(contributions: List<ProductContribution>) {
             Column {
                 (positives + negatives).forEachIndexed { index, contribution ->
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                        modifier = Modifier
+                            .clickable { onProduct(contribution.productId) }
+                            .padding(horizontal = 16.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -761,6 +798,27 @@ private fun MetricSurface(content: @Composable () -> Unit) {
         color = MaterialTheme.colorScheme.surface,
         content = content,
     )
+}
+
+/** The header's compact twin of [ScanButton], reachable without scrolling past the chart. */
+@Composable
+private fun ScanIconButton(
+    isScanning: Boolean,
+    onScanReceipt: () -> Unit,
+) {
+    FilledTonalIconButton(
+        onClick = onScanReceipt,
+        enabled = !isScanning,
+    ) {
+        if (isScanning) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(Icons.Rounded.CameraAlt, contentDescription = "Scan receipt")
+        }
+    }
 }
 
 @Composable

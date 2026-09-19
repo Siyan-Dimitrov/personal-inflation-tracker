@@ -24,6 +24,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -134,8 +135,32 @@ private data class BasketTransientState(
 class BasketViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
     private val observationRepository: ObservationRepository,
+    private val requests: BasketRequests,
 ) : ViewModel() {
     private val transient = MutableStateFlow(BasketTransientState())
+
+    init {
+        viewModelScope.launch {
+            requests.target.filterNotNull().collect { target ->
+                transient.update { draft ->
+                    when (target) {
+                        is BasketTarget.Product ->
+                            draft.copy(selectedProductId = target.productId, message = null)
+                        // The whole category, not just what a leftover search or status filter
+                        // would let through.
+                        is BasketTarget.Category -> draft.copy(
+                            selectedProductId = null,
+                            categoryId = target.categoryId,
+                            searchQuery = "",
+                            statusFilter = ProductStatusFilter.ALL,
+                            message = null,
+                        )
+                    }
+                }
+                requests.clear()
+            }
+        }
+    }
 
     val uiState = combine(
         catalogRepository.observeProducts(),

@@ -12,6 +12,8 @@ import com.siyandimitrov.pocketindex.domain.InflationDashboardCalculator
 import com.siyandimitrov.pocketindex.domain.InflationDashboardInput
 import com.siyandimitrov.pocketindex.domain.MerchantId
 import com.siyandimitrov.pocketindex.domain.MerchantIndex
+import com.siyandimitrov.pocketindex.ui.basket.BasketRequests
+import com.siyandimitrov.pocketindex.ui.basket.BasketTarget
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Date
 import javax.inject.Inject
@@ -79,6 +81,7 @@ enum class InflationChartRange(
 class OverviewViewModel @Inject constructor(
     adapter: InflationRepositoryAdapter,
     private val preferences: InflationPreferences,
+    private val basketRequests: BasketRequests,
 ) : ViewModel() {
     // Session-only: the shop filter is a way of looking at the chart, not a setting.
     private val selectedMerchantId = MutableStateFlow<MerchantId?>(null)
@@ -129,6 +132,11 @@ class OverviewViewModel @Inject constructor(
 
     fun setIncludeBills(include: Boolean) {
         preferences.setIncludeBills(include)
+    }
+
+    /** Parks the request for the basket tab; the caller then navigates there. */
+    fun openInBasket(target: BasketTarget) {
+        basketRequests.open(target)
     }
 
     /** Tapping the selected shop again returns the chart to the headline basket. */

@@ -104,6 +104,16 @@ fun PocketIndexApp() {
         Unit
     }
 
+    val navigateToTab = { route: String ->
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     LaunchedEffect(captureState.completedReceiptId, captureState.message) {
         captureState.completedReceiptId?.let { receiptId ->
             navController.navigate("receipt/$receiptId") {
@@ -127,15 +137,7 @@ fun PocketIndexApp() {
                 destinations.forEach { destination ->
                     NavigationBarItem(
                         selected = currentRoute == destination.route,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { navigateToTab(destination.route) },
                         icon = {
                             Icon(
                                 imageVector = destination.icon,
@@ -162,6 +164,7 @@ fun PocketIndexApp() {
                 OverviewScreen(
                     isScanning = captureState.isProcessing,
                     onScanReceipt = launchScanner,
+                    onOpenBasket = { navigateToTab("basket") },
                 )
             }
             composable("receipts") {
