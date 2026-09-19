@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Storefront
@@ -572,6 +573,7 @@ private fun CategoryExplanation(
                             style = MaterialTheme.typography.titleMedium,
                             color = category.contributionPercentagePoints.changeColor(),
                         )
+                        RowChevron()
                     }
                     if (index < dashboard.categories.lastIndex) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -628,6 +630,7 @@ private fun ProductExplanation(
                             color = contribution.contributionPercentagePoints.changeColor(),
                             fontWeight = FontWeight.SemiBold,
                         )
+                        RowChevron()
                     }
                     if (index < positives.size + negatives.size - 1) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -797,6 +800,17 @@ private fun MetricSurface(content: @Composable () -> Unit) {
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         color = MaterialTheme.colorScheme.surface,
         content = content,
+    )
+}
+
+/** Marks a row that opens something elsewhere, so the tap target is visible before it is tried. */
+@Composable
+private fun RowChevron() {
+    Icon(
+        imageVector = Icons.Rounded.ChevronRight,
+        contentDescription = null,
+        modifier = Modifier.size(20.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
