@@ -78,6 +78,19 @@ class InflationPreferences @Inject constructor(
         awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }.distinctUntilChanged()
 
+    /** Whether recurring bills feed the overview index; off treats them as fixed-price usage. */
+    val includeBills: Flow<Boolean> = callbackFlow {
+        fun emitValue() {
+            trySend(preferences.getBoolean(KEY_INCLUDE_BILLS, true))
+        }
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_INCLUDE_BILLS) emitValue()
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        emitValue()
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
     /** Reactive copy for the settings screen; extraction reads [visionSettings] directly. */
     val visionSettingsFlow: Flow<VisionSettings> = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -126,6 +139,10 @@ class InflationPreferences @Inject constructor(
         preferences.edit().putInt(KEY_CHART_RANGE_MONTHS, months).apply()
     }
 
+    fun setIncludeBills(include: Boolean) {
+        preferences.edit().putBoolean(KEY_INCLUDE_BILLS, include).apply()
+    }
+
     /** True once the user has wiped their data, so debug builds never re-seed demo history. */
     val isDemoSeedBlocked: Boolean
         get() = preferences.getBoolean(KEY_DEMO_SEED_BLOCKED, false)
@@ -140,6 +157,7 @@ class InflationPreferences @Inject constructor(
         preferences.edit()
             .remove(KEY_BASE_WINDOW_DAYS)
             .remove(KEY_CHART_RANGE_MONTHS)
+            .remove(KEY_INCLUDE_BILLS)
             .remove(KEY_VISION_PROVIDER)
             .remove(KEY_VISION_CLAUDE_API_KEY)
             .remove(KEY_VISION_SERVER_URL)
@@ -152,6 +170,7 @@ class InflationPreferences @Inject constructor(
         const val FILE_NAME = "inflation_preferences"
         const val KEY_BASE_WINDOW_DAYS = "base_window_days"
         const val KEY_CHART_RANGE_MONTHS = "chart_range_months"
+        const val KEY_INCLUDE_BILLS = "include_bills"
         const val KEY_DEMO_SEED_BLOCKED = "demo_seed_blocked"
         const val KEY_VISION_PROVIDER = "vision_provider"
         const val KEY_VISION_CLAUDE_API_KEY = "vision_claude_api_key"

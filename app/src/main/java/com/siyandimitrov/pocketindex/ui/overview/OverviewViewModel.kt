@@ -83,16 +83,23 @@ class OverviewViewModel @Inject constructor(
     // Session-only: the shop filter is a way of looking at the chart, not a setting.
     private val selectedMerchantId = MutableStateFlow<MerchantId?>(null)
 
+    val includeBills = preferences.includeBills.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+        initialValue = true,
+    )
+
     val uiState = combine(
         adapter.observeDashboardInput(),
         preferences.baseWindowDays,
         preferences.chartRangeMonths,
+        preferences.includeBills,
         selectedMerchantId,
-    ) { input, baseWindowDays, chartRangeMonths, merchantId ->
-        OverviewInputs(input, baseWindowDays, chartRangeMonths, merchantId)
+    ) { input, baseWindowDays, chartRangeMonths, includeBills, merchantId ->
+        OverviewInputs(input, baseWindowDays, chartRangeMonths, includeBills, merchantId)
     }.mapLatest { inputs ->
         calculateOverviewState(
-            input = inputs.input,
+            input = if (inputs.includeBills) inputs.input else inputs.input.withoutBills(),
             asOf = EpochDay(Math.floorDiv(Date().time, MILLIS_PER_DAY)),
             configuration = IndexConfiguration(baseWindowDays = inputs.baseWindowDays),
             chartRange = InflationChartRange.fromPreference(inputs.chartRangeMonths),
@@ -120,6 +127,10 @@ class OverviewViewModel @Inject constructor(
         preferences.setChartRangeMonths(range.preferenceValue)
     }
 
+    fun setIncludeBills(include: Boolean) {
+        preferences.setIncludeBills(include)
+    }
+
     /** Tapping the selected shop again returns the chart to the headline basket. */
     fun toggleMerchant(merchantId: MerchantId) {
         selectedMerchantId.update { current -> if (current == merchantId) null else merchantId }
@@ -129,6 +140,7 @@ class OverviewViewModel @Inject constructor(
         val input: InflationDashboardInput,
         val baseWindowDays: Long,
         val chartRangeMonths: Int,
+        val includeBills: Boolean,
         val selectedMerchantId: MerchantId?,
     )
 
@@ -191,6 +203,19 @@ internal fun calculateOverviewState(
                     ?: "The saved observations could not be calculated.",
             )
         },
+    )
+}
+
+/**
+ * Drops recurring bills (service products and their observations) so the index reflects shop
+ * prices only. A fixed-price contract whose bill changes reflects usage, not inflation.
+ */
+internal fun InflationDashboardInput.withoutBills(): InflationDashboardInput {
+    val groceryProducts = products.filter { it.isGroceryType }
+    val groceryIds = groceryProducts.mapTo(hashSetOf()) { it.id }
+    return copy(
+        products = groceryProducts,
+        observations = observations.filter { it.productId in groceryIds },
     )
 }
 

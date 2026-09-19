@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -37,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -72,6 +75,7 @@ fun OverviewScreen(
 ) {
     val viewModel: OverviewViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val includeBills by viewModel.includeBills.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -104,10 +108,12 @@ fun OverviewScreen(
                     )
                 }
                 item { IndexChart(emptyList()) }
+                item { BillsToggle(includeBills, viewModel::setIncludeBills) }
             }
             is OverviewUiState.BuildingBaseBasket -> {
                 item { BuildingCard(currentState) }
                 item { IndexChart(emptyList()) }
+                item { BillsToggle(includeBills, viewModel::setIncludeBills) }
             }
             is OverviewUiState.Error -> item {
                 MessageCard(
@@ -145,6 +151,7 @@ fun OverviewScreen(
                             ?: "Fixed-basket index",
                     )
                 }
+                item { BillsToggle(includeBills, viewModel::setIncludeBills) }
                 if (dashboard.merchants.isNotEmpty()) {
                     item {
                         ShopExplanation(
@@ -269,6 +276,34 @@ private fun ChartRangeSelector(
                 )
             }
         }
+    }
+}
+
+/**
+ * Bills on a fixed-price contract change with usage, not prices, so the user can keep them out
+ * of the index. Shown with every chart so an excluded-bills view can always be switched back.
+ */
+@Composable
+private fun BillsToggle(
+    includeBills: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = includeBills,
+                onValueChange = onChange,
+                role = Role.Checkbox,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = includeBills, onCheckedChange = null)
+        Text(
+            text = "Include household bills",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 4.dp),
+        )
     }
 }
 
