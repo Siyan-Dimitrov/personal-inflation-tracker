@@ -256,6 +256,14 @@ class BasketViewModel @Inject constructor(
         }
     }
 
+    fun deleteProduct() {
+        val productId = uiState.value.selectedProductId ?: return
+        launchSaving("Product deleted.") {
+            catalogRepository.deleteProduct(productId)
+            transient.update { it.copy(selectedProductId = null) }
+        }
+    }
+
     private fun launchSaving(successMessage: String, operation: suspend () -> Unit) {
         transient.update { it.copy(isSaving = true, message = null) }
         viewModelScope.launch {

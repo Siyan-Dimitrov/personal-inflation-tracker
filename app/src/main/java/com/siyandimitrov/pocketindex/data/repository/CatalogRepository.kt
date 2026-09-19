@@ -22,4 +22,5 @@ interface CatalogRepository {
     suspend fun updateMerchant(merchant: MerchantEntity)
     suspend fun updateProduct(product: ProductEntity)
     suspend fun mergeProducts(sourceProductId: Long, targetProductId: Long)
+    suspend fun deleteProduct(productId: Long)
 }

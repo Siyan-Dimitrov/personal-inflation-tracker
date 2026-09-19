@@ -119,6 +119,14 @@ class DefaultCatalogRepository @Inject constructor(
             }
         }
     }
+
+    /**
+     * The schema does the rest: price observations and any recurring bill cascade away, while
+     * receipt lines keep their text and merely lose the link to this product.
+     */
+    override suspend fun deleteProduct(productId: Long) {
+        check(products.deleteById(productId) == 1) { "The product no longer exists." }
+    }
 }
 
 internal fun decodeAliases(json: String): List<String> {

@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Merge
@@ -95,6 +96,7 @@ fun BasketScreen(
                 onSaveObservation = viewModel::saveManualObservation,
                 onSaveProduct = viewModel::saveProduct,
                 onMerge = viewModel::mergeInto,
+                onDelete = viewModel::deleteProduct,
                 modifier = Modifier.padding(padding),
             )
         } else {
@@ -336,12 +338,14 @@ private fun ProductDetail(
     onSaveObservation: (String, String, String, Long?) -> Unit,
     onSaveProduct: (String, Long?, UnitType, String, String) -> Unit,
     onMerge: (Long) -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val detail = requireNotNull(state.selectedProduct)
     var showObservationDialog by rememberSaveable { mutableStateOf(false) }
     var showEditDialog by rememberSaveable { mutableStateOf(false) }
     var showMergeDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     val chartHistory = detail.observations.asReversed().takeLast(12)
     val chartValues = chartHistory.map { observation ->
         when (state.chartMode) {
@@ -373,6 +377,13 @@ private fun ProductDetail(
                 }
                 IconButton(onClick = { showEditDialog = true }) {
                     Icon(Icons.Rounded.Edit, contentDescription = "Edit product")
+                }
+                IconButton(onClick = { showDeleteDialog = true }) {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = "Delete product",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         }
@@ -526,6 +537,37 @@ private fun ProductDetail(
             onMerge = {
                 onMerge(it)
                 showMergeDialog = false
+            },
+        )
+    }
+    if (showDeleteDialog) {
+        val priceCount = detail.observations.size
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete ${detail.product.canonicalName}?") },
+            text = {
+                Text(
+                    "This removes the product and its $priceCount recorded price" +
+                        (if (priceCount == 1) "" else "s") +
+                        " from your index, along with any recurring bill for it. " +
+                        "Lines on saved receipts keep their text but lose the link to this product.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDelete()
+                    },
+                    enabled = !state.isSaving,
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
             },
         )
     }
